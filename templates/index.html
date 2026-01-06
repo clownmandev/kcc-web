@@ -3,72 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KCC Web Converter</title>
+    <title>KCC Web Suite</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .tabs { display: flex; border-bottom: 2px solid #ccc; margin-bottom: 20px; }
+        .tab { padding: 10px 20px; cursor: pointer; border: 1px solid transparent; border-bottom: none; }
+        .tab.active { background: #eee; border-color: #ccc; border-bottom: 2px solid #eee; margin-bottom: -2px; font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
         .form-group { margin-bottom: 1rem; }
         label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
-        select, input[type="file"] { width: 100%; padding: 0.5rem; }
-        button { background: #007bff; color: white; padding: 1rem 2rem; border: none; cursor: pointer; font-size: 1rem; }
+        select, input[type="file"], input[type="text"], input[type="number"] { width: 100%; padding: 0.5rem; box-sizing: border-box; }
+        button { background: #007bff; color: white; padding: 1rem 2rem; border: none; cursor: pointer; font-size: 1rem; margin-top: 10px;}
         button:hover { background: #0056b3; }
-        .note { font-size: 0.8rem; color: #666; margin-top: 2rem; border-top: 1px solid #ccc; padding-top: 1rem; }
-        .highlight { color: #d9534f; font-weight: bold; }
+        
+        #results { margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; }
+        .manga-item { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .manga-item h3 { margin: 0 0 5px 0; font-size: 1.1rem; }
+        .manga-item p { font-size: 0.9rem; color: #666; margin: 0 0 10px 0; }
+        .btn-select { background: #28a745; padding: 5px 10px; font-size: 0.9rem; }
+        
+        .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.8); color: white; display: none; justify-content: center; align-items: center; flex-direction: column; z-index: 999; }
     </style>
+    <script>
+        function openTab(name) {
+            document.querySelectorAll('.tab-content').forEach(d => d.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(d => d.classList.remove('active'));
+            document.getElementById(name).classList.add('active');
+            document.getElementById('tab-'+name).classList.add('active');
+        }
+
+        async function searchManga() {
+            const query = document.getElementById('search-query').value;
+            const btn = document.getElementById('search-btn');
+            btn.disabled = true;
+            btn.innerText = "Searching...";
+            
+            const res = await fetch('/api/search', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'query=' + encodeURIComponent(query)
+            });
+            
+            const data = await res.json();
+            const container = document.getElementById('results');
+            container.innerHTML = '';
+            
+            if (data.error) {
+                container.innerHTML = `<p style="color:red">Error: ${data.error}</p>`;
+            } else {
+                data.forEach(m => {
+                    const div = document.createElement('div');
+                    div.className = 'manga-item';
+                    div.innerHTML = `
+                        <h3>${m.title}</h3>
+                        <p>${m.desc}</p>
+                        <button class="btn-select" onclick="selectManga('${m.id}', '${m.title.replace(/'/g, "\\'")}')">Select This Manga</button>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            btn.disabled = false;
+            btn.innerText = "Search";
+        }
+
+        function selectManga(id, title) {
+            document.getElementById('selected-manga-id').value = id;
+            document.getElementById('selected-manga-display').innerText = "Selected: " + title;
+            document.getElementById('dl-options').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+        }
+
+        function showLoading() {
+            document.getElementById('loading-overlay').style.display = 'flex';
+        }
+    </script>
 </head>
 <body>
-    <h1>Kindle Comic Converter (Web)</h1>
-    <form action="/convert" method="post" enctype="multipart/form-data">
-        <div class="form-group">
-            <label for="file">Choose Comic File (CBZ, CBR, ZIP, PDF):</label>
-            <input type="file" name="file" id="file" required>
-        </div>
-
-        <div class="form-group">
-            <label for="profile">Device Profile:</label>
-            <select name="profile" id="profile">
-                <option value="KPW" selected>Kindle Paperwhite 1 & 2 (Gen 5 / 6)</option>
-                <option value="KV">Kindle Paperwhite 3/4 / Voyage / Oasis</option>
-                <option value="K578">Basic Kindle (Gen 7/8/10)</option>
-                <option value="K11">Kindle Paperwhite 5 (11th Gen)</option>
-                <option value="KO">Kindle Oasis 2/3</option>
-                <option value="KS">Kindle Scribe</option>
-            </select>
-        </div>
-
-        <div class="form-group">
-            <label for="format">Output Format:</label>
-            <select name="format" id="format">
-                <option value="MOBI" selected>MOBI/AZW3 (Best for USB Transfer)</option>
-                <option value="EPUB">EPUB (Best for 'Send to Kindle')</option>
-                <option value="CBZ">CBZ (Archive only)</option>
-            </select>
-        </div>
-
-        <div class="form-group">
-            <label>
-                <input type="checkbox" name="manga_style" checked> 
-                Manga Mode (Right-to-Left reading)
-            </label>
-        </div>
-
-        <div class="form-group">
-            <label>
-                <input type="checkbox" name="upscale"> 
-                Upscale (Improve quality)
-            </label>
-        </div>
-
-        <button type="submit">Convert & Download</button>
-    </form>
-    <div class="note">
-        <p><strong>Step-by-Step for Kindle Paperwhite 6th Gen:</strong></p>
-        <ol>
-            <li>Select <strong>Kindle Paperwhite 1 & 2</strong> above.</li>
-            <li>Select <strong>MOBI</strong> format.</li>
-            <li>Click Convert and wait for the download.</li>
-            <li>Connect your Kindle to PC via USB.</li>
-            <li>Drag the downloaded file into the <strong>documents</strong> folder on the Kindle drive.</li>
-        </ol>
+    <div class="overlay" id="loading-overlay">
+        <h2>Processing...</h2>
+        <p>Downloading and Converting. Large chapters may take several minutes.</p>
+        <p>Please do not close this tab.</p>
     </div>
-</body>
-</html>
+
+    <h1>KCC Web Suite</h1>
+
+    <div class="tabs">
+        <div class="tab active" id="tab-upload" onclick="openTab('upload')">1. Upload File</div>
+        <div class="tab" id="tab-mangadex" onclick="openTab('mangadex')">2. Download from MangaDex</div>
+    </div>
+
+    <div id="upload" class="tab-content active">
+        <form action="/convert" method="post" enctype="multipart/form-data" onsubmit="showLoading()">
+            <div class
