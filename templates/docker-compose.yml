@@ -1,0 +1,8 @@
+version: '3'
+services:
+  kcc-web:
+    build: .
+    container_name: kcc-web
+    ports:
+      - "5005:5000"
+    restart: unless-stopped
