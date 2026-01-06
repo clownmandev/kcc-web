@@ -96,4 +96,91 @@
 
     <div id="upload" class="tab-content active">
         <form action="/convert" method="post" enctype="multipart/form-data" onsubmit="showLoading()">
-            <div class
+            <div class="form-group">
+                <label>Choose File (CBZ, ZIP, PDF):</label>
+                <input type="file" name="file" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Profile:</label>
+                <select name="profile">
+                    <option value="KPW" selected>Kindle Paperwhite 1/2 (Gen 5/6)</option>
+                    <option value="KV">Kindle PW 3/4 / Voyage</option>
+                    <option value="K11">Kindle PW 5 (11th Gen)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Format:</label>
+                <select name="format">
+                    <option value="MOBI" selected>MOBI (For USB)</option>
+                    <option value="EPUB">EPUB</option>
+                </select>
+            </div>
+            <div class="form-group"><label><input type="checkbox" name="manga_style" checked> Manga Mode</label></div>
+            
+            <button type="submit">Convert Uploaded File</button>
+        </form>
+    </div>
+
+    <div id="mangadex" class="tab-content">
+        <div class="form-group">
+            <label>Search Manga Title:</label>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="search-query" placeholder="e.g. Deadman Wonderland">
+                <button type="button" id="search-btn" onclick="searchManga()" style="margin-top:0;">Search</button>
+            </div>
+        </div>
+
+        <div id="results"></div>
+
+        <form action="/auto_convert" method="post" id="dl-options" style="display:none; background:#f9f9f9; padding:15px; border-radius:5px;" onsubmit="showLoading()">
+            <h3 id="selected-manga-display"></h3>
+            <input type="hidden" name="manga_id" id="selected-manga-id">
+
+            <div class="form-group">
+                <label>Selection Type:</label>
+                <select name="selection_type" onchange="this.value=='range' ? document.getElementById('range-opts').style.display='block' : document.getElementById('range-opts').style.display='none'">
+                    <option value="all">Download All Available Chapters (Warning: Large!)</option>
+                    <option value="range" selected>Select Chapter Range</option>
+                </select>
+            </div>
+
+            <div id="range-opts" class="form-group" style="display:block;">
+                <div style="display:flex; gap:10px;">
+                    <div><label>Start Ch:</label><input type="number" name="chapter_start" placeholder="1"></div>
+                    <div><label>End Ch:</label><input type="number" name="chapter_end" placeholder="10"></div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Language:</label>
+                <select name="lang">
+                    <option value="en" selected>English</option>
+                    <option value="fr">French</option>
+                    <option value="es">Spanish</option>
+                    <option value="it">Italian</option>
+                </select>
+            </div>
+
+            <hr>
+            <div class="form-group">
+                <label>Profile:</label>
+                <select name="profile">
+                    <option value="KPW" selected>Kindle Paperwhite 1/2 (Gen 5/6)</option>
+                    <option value="KV">Kindle PW 3/4 / Voyage</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Format:</label>
+                <select name="format">
+                    <option value="MOBI" selected>MOBI (For USB)</option>
+                    <option value="EPUB">EPUB</option>
+                </select>
+            </div>
+            <div class="form-group"><label><input type="checkbox" name="manga_style" checked> Manga Mode</label></div>
+
+            <button type="submit">Download & Convert</button>
+        </form>
+    </div>
+</body>
+</html>
