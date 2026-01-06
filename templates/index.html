@@ -3,62 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KCC Web 2026</title>
+    <title>KCC Web Converter</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f4f4f9; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 400px; }
-        h1 { margin-top: 0; text-align: center; color: #4a4a4a; }
+        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
         .form-group { margin-bottom: 1rem; }
         label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
-        select, input[type="file"] { width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
-        .checkbox-group { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-        button { width: 100%; padding: 1rem; background: #0070f3; color: white; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
-        button:hover { background: #0051a2; }
-        .loader { display: none; text-align: center; margin-top: 1rem; font-size: 0.9rem; color: #666; }
+        select, input[type="file"] { width: 100%; padding: 0.5rem; }
+        button { background: #007bff; color: white; padding: 1rem 2rem; border: none; cursor: pointer; font-size: 1rem; }
+        button:hover { background: #0056b3; }
+        .note { font-size: 0.8rem; color: #666; margin-top: 2rem; border-top: 1px solid #ccc; padding-top: 1rem; }
+        .highlight { color: #d9534f; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>KCC Web Converter</h1>
-        <form action="/convert" method="post" enctype="multipart/form-data" onsubmit="document.querySelector('.loader').style.display='block'">
-            
-            <div class="form-group">
-                <label>Upload Manga (.cbz, .cbr, .zip)</label>
-                <input type="file" name="file" required>
-            </div>
+    <h1>Kindle Comic Converter (Web)</h1>
+    <form action="/convert" method="post" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="file">Choose Comic File (CBZ, CBR, ZIP, PDF):</label>
+            <input type="file" name="file" id="file" required>
+        </div>
 
-            <div class="form-group">
-                <label>Device Profile</label>
-                <select name="device">
-                    <option value="KPW">Kindle Paperwhite 1/2 (6th Gen)</option>
-                    <option value="KS">Kindle Scribe (300 PPI)</option>
-                    <option value="KPW5" selected>Kindle Paperwhite 5 (11th Gen)</option>
-                    <option value="KCS">Kindle Colorsoft</option>
-                    <option value="KV">Kindle Voyage / Oasis</option>
-                </select>
-            </div>
+        <div class="form-group">
+            <label for="profile">Device Profile:</label>
+            <select name="profile" id="profile">
+                <option value="KPW" selected>Kindle Paperwhite 1 & 2 (Gen 5 / 6)</option>
+                <option value="KV">Kindle Paperwhite 3/4 / Voyage / Oasis</option>
+                <option value="K578">Basic Kindle (Gen 7/8/10)</option>
+                <option value="K11">Kindle Paperwhite 5 (11th Gen)</option>
+                <option value="KO">Kindle Oasis 2/3</option>
+                <option value="KS">Kindle Scribe</option>
+            </select>
+        </div>
 
-            <div class="form-group">
-                <label>Output Format</label>
-                <select name="format">
-                    <option value="MOBI" selected>MOBI (Best for USB)</option>
-                    <option value="EPUB">EPUB (Best for Send-to-Kindle)</option>
-                </select>
-            </div>
+        <div class="form-group">
+            <label for="format">Output Format:</label>
+            <select name="format" id="format">
+                <option value="MOBI" selected>MOBI/AZW3 (Best for USB Transfer)</option>
+                <option value="EPUB">EPUB (Best for 'Send to Kindle')</option>
+                <option value="CBZ">CBZ (Archive only)</option>
+            </select>
+        </div>
 
-            <div class="checkbox-group">
-                <input type="checkbox" name="manga_mode" id="manga_mode" checked>
-                <label for="manga_mode" style="margin:0; font-weight:normal;">Manga Mode (Right-to-Left)</label>
-            </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="manga_style" checked> 
+                Manga Mode (Right-to-Left reading)
+            </label>
+        </div>
 
-            <div class="checkbox-group">
-                <input type="checkbox" name="upscale" id="upscale" checked>
-                <label for="upscale" style="margin:0; font-weight:normal;">Upscale Images</label>
-            </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="upscale"> 
+                Upscale (Improve quality)
+            </label>
+        </div>
 
-            <button type="submit">Convert & Download</button>
-            <div class="loader">Processing... This may take a minute.</div>
-        </form>
+        <button type="submit">Convert & Download</button>
+    </form>
+    <div class="note">
+        <p><strong>Step-by-Step for Kindle Paperwhite 6th Gen:</strong></p>
+        <ol>
+            <li>Select <strong>Kindle Paperwhite 1 & 2</strong> above.</li>
+            <li>Select <strong>MOBI</strong> format.</li>
+            <li>Click Convert and wait for the download.</li>
+            <li>Connect your Kindle to PC via USB.</li>
+            <li>Drag the downloaded file into the <strong>documents</strong> folder on the Kindle drive.</li>
+        </ol>
     </div>
 </body>
 </html>
