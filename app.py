@@ -32,7 +32,7 @@ def run_command_with_retry(cmd, max_retries=3):
     attempt = 0
     while attempt < max_retries:
         try:
-            # bufsize=0 and text=True line buffering
+            # bufsize=1 enables line buffering for real-time output
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
             
             for line in process.stdout:
@@ -243,4 +243,64 @@ def stream_convert():
             
             combined_path = os.path.join(COMBINE_DIR, safe_name)
             if os.path.exists(combined_path): shutil.rmtree(combined_path)
-            os.makedirs(
+            os.makedirs(combined_path)
+            
+            target_files.sort() # Ensure Vol 1 is before Vol 2
+            
+            img_idx = 0
+            for cbz in target_files:
+                try:
+                    with zipfile.ZipFile(cbz, 'r') as z:
+                        images = sorted([f for f in z.namelist() if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
+                        for img in images:
+                            img_idx += 1
+                            ext = os.path.splitext(img)[1]
+                            new_name = f"img_{img_idx:06d}{ext}"
+                            with open(os.path.join(combined_path, new_name), 'wb') as f_out:
+                                f_out.write(z.read(img))
+                except Exception as e:
+                    yield f"data: LOG: Skip {os.path.basename(cbz)}: {e}\n\n"
+            
+            target_files = [combined_path]
+
+        # --- CONVERT ---
+        yield "data: STATUS: Starting KCC Conversion... \n\n"
+        
+        kcc_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', OUTPUT_FOLDER]
+        if upscale: kcc_cmd.append('-u')
+        if manga_style: kcc_cmd.append('-m')
+        if splitter: kcc_cmd.extend(['-s', '1'])
+        
+        kcc_cmd.extend(target_files)
+        
+        yield f"data: LOG: Cmd: {' '.join(kcc_cmd)}\n\n"
+        for line in run_command_with_retry(kcc_cmd):
+             yield f"data: LOG: {line.strip()}\n\n"
+
+        # --- PACKAGING ---
+        yield "data: STATUS: Finalizing... \n\n"
+        
+        output_files = [f for f in os.listdir(OUTPUT_FOLDER) if f.endswith(('.mobi', '.epub', '.azw3', '.cbz'))]
+        
+        if not output_files:
+            yield "data: ERROR: No output files generated.\n\n"
+            return
+
+        if len(output_files) == 1:
+            yield f"data: DONE: {output_files[0]}\n\n"
+        else:
+            zip_name = f"{final_title} - Pack"
+            safe_zip_path = os.path.join(ZIP_TEMP, zip_name)
+            shutil.make_archive(safe_zip_path, 'zip', OUTPUT_FOLDER)
+            final_name = f"{zip_name}.zip"
+            shutil.move(f"{safe_zip_path}.zip", os.path.join(OUTPUT_FOLDER, final_name))
+            yield f"data: DONE: {final_name}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+@app.route('/download_file/<filename>')
+def download_file(filename):
+    return send_file(os.path.join(OUTPUT_FOLDER, filename), as_attachment=True)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
