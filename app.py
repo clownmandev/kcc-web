@@ -25,6 +25,7 @@ for d in [UPLOAD_FOLDER, OUTPUT_FOLDER, DOWNLOAD_FOLDER]:
 def run_command_with_retry(cmd, max_retries=3):
     """Runs a command and streams output, retrying on failure."""
     attempt = 0
+    # Common error strings to catch
     while attempt < max_retries:
         try:
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -56,7 +57,6 @@ def search_manga():
     if not query: return jsonify({'error': 'No query provided'}), 400
     
     url = "https://api.mangadex.org/manga"
-    # contentRating[] allows us to see all types of content
     # includes[]=cover_art is REQUIRED to get the cover filename
     params = {
         'title': query, 
@@ -127,7 +127,7 @@ def upload_file():
     
     if file:
         filename = secure_filename(file.filename)
-        # Clear upload folder first to save space/confusion (optional, remove if you want multi-user concurrency)
+        # Clear upload folder first to save space
         if os.path.exists(UPLOAD_FOLDER):
             shutil.rmtree(UPLOAD_FOLDER)
         os.makedirs(UPLOAD_FOLDER)
@@ -145,6 +145,7 @@ def stream_convert():
         format_type = request.args.get('format', 'MOBI')
         upscale = request.args.get('upscale') == 'true'
         manga_style = request.args.get('manga_style') == 'true'
+        splitter = request.args.get('splitter') == 'true'
 
         # Reset Output
         if os.path.exists(OUTPUT_FOLDER): 
@@ -154,7 +155,7 @@ def stream_convert():
         yield "data: STATUS: Initializing Conversion Engine... \n\n"
 
         target_files = []
-        final_title = "Converted_Manga" # Default name
+        final_title = "Converted_Manga" 
 
         # --- MODE: MANGADEX ---
         if mode == 'mangadex':
@@ -210,9 +211,18 @@ def stream_convert():
 
         yield "data: STATUS: Running KCC Conversion... \n\n"
 
-        kcc_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', OUTPUT_FOLDER, '--nopanelview', '--spreadsplitter']
-        if upscale: kcc_cmd.append('--upscale')
-        if manga_style: kcc_cmd.append('--manga-style')
+        # FIXED KCC COMMAND ARGS
+        # -p: Profile
+        # -f: Format
+        # -m: Manga Mode (Right-to-Left)
+        # -s 1: Split Spreads
+        # -u: Upscale
+        kcc_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', OUTPUT_FOLDER]
+        
+        if upscale: kcc_cmd.append('-u')
+        if manga_style: kcc_cmd.append('-m')
+        if splitter: kcc_cmd.extend(['-s', '1'])
+        
         kcc_cmd.extend(target_files)
         
         for line in run_command_with_retry(kcc_cmd):
