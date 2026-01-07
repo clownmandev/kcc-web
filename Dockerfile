@@ -1,8 +1,11 @@
-# Use a lightweight Python base image
-FROM python:3.10-slim
+# Use the full Debian Bullseye image (not slim) to ensure all libraries exist
+FROM python:3.10-bullseye
 
-# Install system dependencies
-# libc6-i386 is REQUIRED for kindlegen (32-bit)
+# 1. Force Python to show logs immediately (Fixes "No logs" issue)
+ENV PYTHONUNBUFFERED=1
+
+# 2. Install Dependencies
+# 'libc6-i386' is CRITICAL for KindleGen (which is a 32-bit app)
 RUN apt-get update && apt-get install -y \
     git \
     p7zip-full \
@@ -12,28 +15,23 @@ RUN apt-get update && apt-get install -y \
     libc6-i386 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install KCC
+# 3. Install KCC (Kindle Comic Converter)
 RUN pip install --no-cache-dir git+https://github.com/ciromattia/kcc.git
 
-# Install Flask and Requests (for API calls)
-RUN pip install --no-cache-dir flask requests
+# 4. Install MangaDex Downloader & Flask
+RUN pip install --no-cache-dir mangadex-downloader flask requests
 
-# Install MangaDex Downloader
-RUN pip install --no-cache-dir mangadex-downloader
-
-# --- Install KindleGen ---
+# 5. Install KindleGen (The "MOBI Fix")
+# We download it, extract it to /usr/local/bin, and make it executable
 RUN wget -O kindlegen.tar.gz "https://archive.org/download/kindlegen2.9/kindlegen_linux_2.6_i386_v2_9.tar.gz" \
     && tar -xzf kindlegen.tar.gz -C /usr/local/bin \
-    && rm kindlegen.tar.gz
+    && rm kindlegen.tar.gz \
+    && chmod +x /usr/local/bin/kindlegen
 
-# Set working directory
+# 6. Setup App
 WORKDIR /app
-
-# Copy your application code
 COPY . .
-
-# Expose the port
 EXPOSE 5000
 
-# Run the application
+# 7. Run Command
 CMD ["python", "app.py"]
