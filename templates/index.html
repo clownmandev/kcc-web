@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KCC Web Suite v5.2</title>
+    <title>KCC Web Suite v6.0</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f4f6f8; color: #333; }
         .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
@@ -15,8 +15,6 @@
         .input-group { display: flex; gap: 10px; margin-bottom: 1rem; }
         input, select { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
         button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #0056b3; }
-        button.secondary { background: #6c757d; }
         button.success { background: #28a745; width: 100%; padding: 15px; font-size: 1.1rem; }
         #results { margin-top: 20px; max-height: 400px; overflow-y: auto; }
         .manga-item { border: 1px solid #eee; padding: 15px; margin-bottom: 10px; background: white; border-radius: 8px; display: flex; gap: 15px; }
@@ -26,7 +24,6 @@
         .success-line { background: #28a745; color: white; padding: 15px; text-align: center; border-radius: 6px; margin: 10px 0; }
         .success-line a { color: white; font-weight: bold; font-size: 1.2em; }
         #selection-area { display: none; background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 15px; border: 1px solid #dee2e6; }
-        #manga-stats { font-weight: 500; color: #28a745; margin-bottom: 15px; }
         .checkbox-label { display: flex; align-items: center; cursor: pointer; margin-right: 20px; background: #f1f1f1; padding: 8px 15px; border-radius: 20px; }
         .checkbox-label input { width: auto; margin-right: 8px; }
     </style>
@@ -46,18 +43,12 @@
             const query = document.getElementById('search-query').value;
             if(!query) return;
             document.getElementById('btn-search').innerText = "Searching...";
-            
-            const res = await fetch('/api/search', { 
-                method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'query=' + encodeURIComponent(query) 
-            });
+            const res = await fetch('/api/search', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'query=' + encodeURIComponent(query) });
             const data = await res.json();
-            
             document.getElementById('btn-search').innerText = "Search";
             const container = document.getElementById('results');
             container.innerHTML = '';
-            
             if (data.error) { container.innerHTML = `<div style="color:red">Error: ${data.error}</div>`; return; }
-            
             data.forEach(m => {
                 const safeTitle = m.title.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 container.innerHTML += `
@@ -65,7 +56,6 @@
                         <img src="${m.cover}" class="manga-thumb">
                         <div style="flex-grow:1;">
                             <h3 style="margin:0 0 5px 0;">${m.title}</h3>
-                            <div style="font-size:0.85rem; color:#666; margin-bottom:10px;">${m.desc}</div>
                             <button onclick="selectManga('${m.id}', '${safeTitle}')" class="secondary">Select</button>
                         </div>
                     </div>`;
@@ -78,18 +68,12 @@
             document.getElementById('selected-label').innerHTML = `Selected: <b>${title}</b>`;
             document.getElementById('selection-area').style.display = 'block';
             document.getElementById('results').innerHTML = '';
-            
-            const statsDiv = document.getElementById('manga-stats');
-            statsDiv.innerHTML = 'Fetching info...';
-            
             try {
-                const res = await fetch('/api/manga_details', { 
-                    method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'manga_id=' + id 
-                });
+                const res = await fetch('/api/manga_details', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'manga_id=' + id });
                 const data = await res.json();
-                statsDiv.innerHTML = `Found: ${data.total_volumes} Volumes (Latest Ch. ${data.latest_chapter})`;
+                document.getElementById('manga-stats').innerHTML = `Found: ${data.total_volumes} Volumes (Latest Ch. ${data.latest_chapter})`;
                 document.getElementById('vol-end').value = data.total_volumes > 0 ? data.total_volumes : 1;
-            } catch (e) { statsDiv.innerHTML = ''; }
+            } catch (e) {}
         }
 
         async function uploadFile() {
@@ -124,18 +108,14 @@
                 if(!document.getElementById('selected-manga-id').value) { alert("Select manga first"); return; }
                 params.append('manga_id', document.getElementById('selected-manga-id').value);
                 params.append('manga_title', document.getElementById('selected-manga-title').value);
-                
-                // Add Volume and Chapter params
-                const volStart = document.getElementById('vol-start').value;
-                const volEnd = document.getElementById('vol-end').value;
-                const chapStart = document.getElementById('chap-start').value;
-                const chapEnd = document.getElementById('chap-end').value;
-
-                if (volStart) params.append('vol_start', volStart);
-                if (volEnd) params.append('vol_end', volEnd);
-                if (chapStart) params.append('chap_start', chapStart);
-                if (chapEnd) params.append('chap_end', chapEnd);
-                
+                if(document.getElementById('vol-start').value) params.append('vol_start', document.getElementById('vol-start').value);
+                if(document.getElementById('vol-end').value) params.append('vol_end', document.getElementById('vol-end').value);
+                if(document.getElementById('chap-start').value) params.append('chap_start', document.getElementById('chap-start').value);
+                if(document.getElementById('chap-end').value) params.append('chap_end', document.getElementById('chap-end').value);
+            } else if (currentMode === 'url') {
+                 const url = document.getElementById('url-input').value;
+                 if(!url) { alert("Enter URL first"); return; }
+                 params.append('url_input', url);
             } else {
                 if(!uploadedFilename) { alert("Upload file first"); return; }
                 params.append('filename', uploadedFilename);
@@ -163,9 +143,10 @@
 </head>
 <body>
     <div class="container">
-        <h1>KCC Web Suite v5.2</h1>
+        <h1>KCC Web Suite v6.0</h1>
         <div class="tabs">
             <div class="tab active" id="tab-mangadex" onclick="switchTab('mangadex')">Mangadex</div>
+            <div class="tab" id="tab-url" onclick="switchTab('url')">MangaFire / URL</div>
             <div class="tab" id="tab-local" onclick="switchTab('local')">Local File</div>
         </div>
 
@@ -177,25 +158,32 @@
             <div id="results"></div>
             <div id="selection-area">
                 <div id="selected-label"></div>
-                <div id="manga-stats"></div>
+                <div id="manga-stats" style="color:#28a745; margin-bottom:10px;"></div>
                 <input type="hidden" id="selected-manga-id">
                 <input type="hidden" id="selected-manga-title">
                 
-                <div style="background:#eef; padding:15px; border-radius:8px; margin-bottom:15px;">
-                    <div style="font-weight:bold; margin-bottom:10px; color:#555;">Option 1: Select by Volume</div>
+                <div style="background:#eef; padding:10px; margin-bottom:10px; border-radius:6px;">
+                    <small><b>Option 1: Volumes</b></small>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                        <div><label>Start Vol</label><input type="number" id="vol-start" value="1"></div>
-                        <div><label>End Vol</label><input type="number" id="vol-end" value="1"></div>
+                        <input type="number" id="vol-start" placeholder="Start Vol" value="1">
+                        <input type="number" id="vol-end" placeholder="End Vol" value="1">
                     </div>
                 </div>
+                <div style="background:#fee; padding:10px; margin-bottom:10px; border-radius:6px;">
+                    <small><b>Option 2: Chapters (Overrides Vol)</b></small>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <input type="number" id="chap-start" placeholder="Start Ch">
+                        <input type="number" id="chap-end" placeholder="End Ch">
+                    </div>
+                </div>
+            </div>
+        </div>
 
-                <div style="background:#fee; padding:15px; border-radius:8px; margin-bottom:15px;">
-                    <div style="font-weight:bold; margin-bottom:10px; color:#555;">Option 2: Select by Chapter (Overrides Vol)</div>
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                        <div><label>Start Chapter</label><input type="number" id="chap-start" placeholder="Optional (e.g. 1)"></div>
-                        <div><label>End Chapter</label><input type="number" id="chap-end" placeholder="Optional (e.g. 8)"></div>
-                    </div>
-                </div>
+        <div id="content-url" class="tab-content">
+            <div style="padding:20px; background:#fdfdfe; border:1px solid #eee; border-radius:8px;">
+                <h3>Universal Downloader (Experimental)</h3>
+                <p style="color:#666; font-size:0.9em;">Supports MangaFire, MangaSee, Imgur, etc. Note: Sites with heavy protection might fail.</p>
+                <input type="text" id="url-input" placeholder="Paste URL here (e.g. https://mangafire.to/manga/...)">
             </div>
         </div>
 
@@ -214,14 +202,8 @@
                 <label class="checkbox-label"><input type="checkbox" id="kcc-upscale" checked> Upscale</label>
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:20px;">
-                <select id="kcc-profile">
-                    <option value="KPW" selected>Kindle PW 1/2</option>
-                    <option value="KV">Kindle PW 3+ / Oasis</option>
-                </select>
-                <select id="kcc-format">
-                    <option value="EPUB" selected>EPUB</option>
-                    <option value="MOBI">MOBI</option>
-                </select>
+                <select id="kcc-profile"><option value="KPW">Kindle PW 1/2</option><option value="KV">Kindle PW 3+</option></select>
+                <select id="kcc-format"><option value="EPUB">EPUB</option><option value="MOBI">MOBI</option></select>
             </div>
             <button class="success" onclick="startProcess()">Start Conversion</button>
         </div>
