@@ -3,36 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KCC Web Suite v4.2</title>
+    <title>KCC Web Suite v4.3</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f4f6f8; color: #333; }
         .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .tabs { display: flex; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; }
         .tab { padding: 12px 24px; cursor: pointer; color: #666; font-weight: 600; }
-        .tab:hover { background: #f9f9f9; }
         .tab.active { border-bottom: 3px solid #007bff; color: #007bff; margin-bottom: -2px; }
-        .tab-content { display: none; animation: fadeIn 0.3s; }
+        .tab-content { display: none; }
         .tab-content.active { display: block; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .input-group { display: flex; gap: 10px; margin-bottom: 1rem; }
         input[type="text"], input[type="number"], select { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: background 0.2s; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         button:hover { background: #0056b3; }
         button.secondary { background: #6c757d; }
         button.secondary:hover { background: #5a6268; }
         #results { margin-top: 20px; max-height: 500px; overflow-y: auto; display: grid; grid-template-columns: 1fr; gap: 10px; }
-        .manga-item { border: 1px solid #eee; padding: 15px; background: white; border-radius: 8px; display: flex; gap: 15px; align-items: start; }
-        .manga-thumb { width: 80px; height: 120px; object-fit: cover; border-radius: 4px; background: #ddd; flex-shrink: 0; }
-        .manga-info { flex-grow: 1; }
-        .manga-info h3 { margin: 0 0 5px 0; font-size: 1.1rem; }
-        .manga-desc { font-size: 0.85rem; color: #666; margin-bottom: 10px; line-height: 1.4; }
-        .selection-box { background: #eef2f5; padding: 15px; border-radius: 8px; border: 1px solid #dde2e5; margin-bottom: 20px; }
-        .selection-header { font-weight: bold; color: #007bff; margin-bottom: 10px; font-size: 1.1rem; }
-        #log-window { background: #1e1e1e; color: #00ff00; font-family: 'Consolas', monospace; padding: 15px; height: 350px; overflow-y: scroll; margin-top: 20px; display: none; border-radius: 8px; font-size: 0.9rem; line-height: 1.4; }
+        .manga-item { border: 1px solid #eee; padding: 15px; background: white; border-radius: 8px; display: flex; gap: 15px; }
+        .manga-thumb { width: 80px; height: 120px; object-fit: cover; background: #ddd; flex-shrink: 0; }
+        #log-window { background: #1e1e1e; color: #00ff00; font-family: 'Consolas', monospace; padding: 15px; height: 350px; overflow-y: scroll; margin-top: 20px; display: none; border-radius: 8px; font-size: 0.9rem; }
         .status-line { color: #fff; background: #333; padding: 5px 10px; margin: 5px -10px; }
         .error-line { color: #ff4444; font-weight: bold; }
-        #drop-zone { border: 2px dashed #ccc; padding: 40px; text-align: center; color: #777; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-        #drop-zone:hover { background: #fafafa; border-color: #aaa; }
+        #drop-zone { border: 2px dashed #ccc; padding: 40px; text-align: center; color: #777; border-radius: 8px; cursor: pointer; }
     </style>
     <script>
         let currentMode = 'mangadex';
@@ -51,11 +43,7 @@
             if(!query) return;
             const btn = document.getElementById('btn-search');
             btn.innerText = "Searching..."; btn.disabled = true;
-            const res = await fetch('/api/search', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'query=' + encodeURIComponent(query)
-            });
+            const res = await fetch('/api/search', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'query=' + encodeURIComponent(query) });
             const data = await res.json();
             btn.innerText = "Search"; btn.disabled = false;
             const container = document.getElementById('results');
@@ -66,9 +54,9 @@
                 container.innerHTML += `
                     <div class="manga-item">
                         <img src="${m.cover}" class="manga-thumb" loading="lazy">
-                        <div class="manga-info">
-                            <h3>${m.title}</h3>
-                            <div class="manga-desc">${m.desc}</div>
+                        <div class="manga-info" style="flex-grow:1; margin-left:15px;">
+                            <h3 style="margin:0 0 5px 0;">${m.title}</h3>
+                            <div style="font-size:0.85rem; color:#666; margin-bottom:10px;">${m.desc}</div>
                             <button onclick="selectManga('${m.id}', '${safeTitle}')" class="secondary">Select</button>
                         </div>
                     </div>`;
@@ -78,11 +66,7 @@
         async function resolveLink() {
             const link = document.getElementById('direct-link').value;
             if(!link) return;
-            const res = await fetch('/api/resolve_link', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'link=' + encodeURIComponent(link)
-            });
+            const res = await fetch('/api/resolve_link', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'link=' + encodeURIComponent(link) });
             const data = await res.json();
             if (data.error) { alert(data.error); } else { selectManga(data.id, data.title); }
         }
@@ -93,8 +77,6 @@
             document.getElementById('selected-label').innerHTML = `Selected: <b>${title}</b>`;
             document.getElementById('selection-area').style.display = 'block';
             document.getElementById('results').innerHTML = '';
-            document.getElementById('search-query').value = '';
-            document.getElementById('direct-link').value = '';
         }
 
         async function uploadFile() {
@@ -103,153 +85,10 @@
             if (!file) return;
             const formData = new FormData();
             formData.append('file', file);
-            const statusDiv = document.getElementById('upload-status');
-            statusDiv.innerHTML = "Uploading... Please wait.";
+            document.getElementById('upload-status').innerHTML = "Uploading...";
             const res = await fetch('/api/upload', { method: 'POST', body: formData });
             const data = await res.json();
             if (data.status === 'success') {
                 uploadedFilename = data.filename;
-                statusDiv.innerHTML = `Ready to convert: <b>${data.filename}</b>`;
-                document.getElementById('btn-start').innerText = "Start Conversion (Local)";
-            } else { statusDiv.innerHTML = `Upload Failed: ${data.error}`; }
-        }
-
-        function startProcess() {
-            const logWin = document.getElementById('log-window');
-            logWin.style.display = 'block';
-            logWin.innerHTML = '<div class="status-line">Initializing Request...</div>';
-
-            const profile = document.getElementById('kcc-profile').value;
-            const format = document.getElementById('kcc-format').value;
-            const upscale = document.getElementById('kcc-upscale').checked;
-            const splitter = document.getElementById('kcc-splitter').checked;
-
-            const params = new URLSearchParams({
-                profile: profile,
-                format: format,
-                upscale: upscale,
-                splitter: splitter,
-                manga_style: 'true',
-                mode: currentMode
-            });
-
-            if (currentMode === 'mangadex') {
-                const id = document.getElementById('selected-manga-id').value;
-                const title = document.getElementById('selected-manga-title').value;
-                const start = document.getElementById('vol-start').value;
-                const end = document.getElementById('vol-end').value;
-                if(!id) { alert("Please select a manga first."); return; }
-                params.append('manga_id', id);
-                params.append('manga_title', title);
-                params.append('vol_start', start);
-                params.append('vol_end', end);
-            } else {
-                if(!uploadedFilename) { alert("Please upload a file first."); return; }
-                params.append('filename', uploadedFilename);
-            }
-
-            const evtSource = new EventSource("/stream_convert?" + params.toString());
-            evtSource.onmessage = function(e) {
-                if (e.data.startsWith("DONE:")) {
-                    const filename = e.data.replace("DONE: ", "").trim();
-                    logWin.innerHTML += `<div class="status-line" style="background:#28a745;">SUCCESS! Downloading ${filename}...</div>`;
-                    evtSource.close();
-                    window.location.href = "/download_file/" + filename;
-                } else if (e.data.startsWith("STATUS:")) {
-                    logWin.innerHTML += `<div class="status-line">${e.data.replace("STATUS:", "")}</div>`;
-                } else if (e.data.startsWith("ERROR:")) {
-                     logWin.innerHTML += `<div class="error-line">${e.data}</div>`;
-                     evtSource.close();
-                } else {
-                    logWin.innerHTML += `<div>${e.data.replace("LOG:", "")}</div>`;
-                }
-                logWin.scrollTop = logWin.scrollHeight;
-            };
-            evtSource.onerror = () => evtSource.close();
-        }
-    </script>
-</head>
-<body>
-    <div class="container">
-        <h1 style="margin-top:0;">KCC Web Suite <span style="font-size:0.5em; color:#888;">v4.2</span></h1>
-        
-        <div class="tabs">
-            <div class="tab active" id="tab-mangadex" onclick="switchTab('mangadex')">Mangadex Downloader</div>
-            <div class="tab" id="tab-local" onclick="switchTab('local')">Local File Converter</div>
-        </div>
-
-        <div id="content-mangadex" class="tab-content active">
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
-                <div>
-                    <label>Search Title</label>
-                    <div class="input-group">
-                        <input type="text" id="search-query" placeholder="e.g. Chainsaw Man">
-                        <button id="btn-search" onclick="searchManga()">Search</button>
-                    </div>
-                </div>
-                <div>
-                    <label>Or Paste Direct Link</label>
-                    <div class="input-group">
-                        <input type="text" id="direct-link" placeholder="https://mangadex.org/title/...">
-                        <button class="secondary" onclick="resolveLink()">Load</button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="results"></div>
-
-            <div id="selection-area" class="selection-box" style="display:none; margin-top:15px;">
-                <div id="selected-label" class="selection-header"></div>
-                <input type="hidden" id="selected-manga-id">
-                <input type="hidden" id="selected-manga-title">
-                
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-                    <div><label>Start Vol:</label><input type="number" id="vol-start" value="1"></div>
-                    <div><label>End Vol:</label><input type="number" id="vol-end" value="1"></div>
-                </div>
-            </div>
-        </div>
-
-        <div id="content-local" class="tab-content">
-            <div id="drop-zone" onclick="document.getElementById('file-input').click()">
-                <h3>Click to Upload File</h3>
-                <p>Supports .zip, .cbz, .pdf, .epub</p>
-                <input type="file" id="file-input" style="display:none" onchange="uploadFile()">
-            </div>
-            <div id="upload-status" style="margin-top:15px; font-weight:bold; color:#007bff;"></div>
-        </div>
-
-        <div style="margin-top:30px; padding-top:20px; border-top:2px solid #eee;">
-            <h3>Conversion Settings</h3>
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:20px;">
-                <div>
-                    <label>Device Profile</label>
-                    <select id="kcc-profile">
-                        <option value="KV">Kindle Paperwhite 3/4 / Voyage</option>
-                        <option value="KPW" selected>Kindle Paperwhite 1/2</option>
-                        <option value="KO">Kindle Oasis</option>
-                        <option value="OTHER">Other / Generic</option>
-                    </select>
-                </div>
-                <div>
-                    <label>Output Format</label>
-                    <select id="kcc-format">
-                        <option value="MOBI">MOBI (Old Kindles)</option>
-                        <option value="EPUB" selected>EPUB (Modern Readers)</option>
-                        <option value="CBZ">CBZ (Raw)</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div style="display:flex; gap:20px; margin-bottom:20px;">
-                <label><input type="checkbox" id="kcc-splitter" checked> Split Double-Pages</label>
-                <label><input type="checkbox" id="kcc-upscale" checked> Upscale Images</label>
-            </div>
-            
-            <button onclick="startProcess()" style="width:100%; padding:15px; background:#28a745;" id="btn-start">Start Conversion</button>
-        </div>
-
-        <div id="log-window"></div>
-    </div>
-</body>
-</html>
+                document.getElementById('upload-status').innerHTML = `Ready: <b>${data.filename}</b>`;
+            } else { document.getElementById('upload-
