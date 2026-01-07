@@ -2,7 +2,24 @@ import os
 import subprocess
 import shutil
 import requests
+import sys
 from flask import Flask, render_template, request, send_file, jsonify, after_this_request
+
+# STARTUP LOGGING
+print("--- KCC WEB IS STARTING ---")
+print(f"Python: {sys.version}")
+print("Checking for KCC...", end=" ")
+try:
+    subprocess.run(['kcc-c2e', '--version'], check=True, capture_output=True)
+    print("OK")
+except Exception as e:
+    print(f"FAIL: {e}")
+
+print("Checking for KindleGen...", end=" ")
+if os.path.exists("/usr/local/bin/kindlegen"):
+    print("OK (Found at /usr/local/bin/kindlegen)")
+else:
+    print("WARNING: KindleGen not found!")
 
 app = Flask(__name__)
 UPLOAD_FOLDER = '/tmp/kcc_uploads'
@@ -24,12 +41,11 @@ def search_manga():
     if not query:
         return jsonify({'error': 'No query provided'}), 400
     
-    # Use MangaDex API to find manga
     url = "https://api.mangadex.org/manga"
     params = {
         'title': query,
         'limit': 10,
-        'contentRating[]': ['safe', 'suggestive', 'erotica', 'pornographic'], # Include all
+        'contentRating[]': ['safe', 'suggestive', 'erotica', 'pornographic'],
         'order[relevance]': 'desc'
     }
     
@@ -40,11 +56,7 @@ def search_manga():
         for manga in data['data']:
             title = manga['attributes']['title'].get('en') or list(manga['attributes']['title'].values())[0]
             desc = manga['attributes']['description'].get('en', 'No description')
-            results.append({
-                'id': manga['id'],
-                'title': title,
-                'desc': desc[:200] + '...'
-            })
+            results.append({'id': manga['id'], 'title': title, 'desc': desc[:200] + '...'})
         return jsonify(results)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -52,119 +64,126 @@ def search_manga():
 @app.route('/auto_convert', methods=['POST'])
 def auto_convert():
     manga_id = request.form.get('manga_id')
-    selection_type = request.form.get('selection_type') # 'all' or 'range'
+    selection_type = request.form.get('selection_type')
     chapter_start = request.form.get('chapter_start')
     chapter_end = request.form.get('chapter_end')
     lang = request.form.get('lang', 'en')
 
-    # KCC Options
     profile = request.form.get('profile', 'KV')
     format_type = request.form.get('format', 'MOBI')
     upscale = request.form.get('upscale') == 'on'
     manga_style = request.form.get('manga_style') == 'on'
 
-    # Prepare Download Command
-    # mangadex-downloader [url] --language [lang] --folder [folder]
     dl_path = os.path.join(DOWNLOAD_FOLDER, manga_id)
-    if os.path.exists(dl_path):
-        shutil.rmtree(dl_path) # Clean start
+    if os.path.exists(dl_path): shutil.rmtree(dl_path)
     
+    # 1. Download
     cmd_dl = [
         'mangadex-downloader', 
         f"https://mangadex.org/title/{manga_id}",
         '--language', lang,
         '--folder', dl_path,
-        '--no-group-name', # Cleaner filenames
-        '--save-as', 'cbz' # Download as CBZ directly so KCC can read it easily
+        '--no-group-name',
+        '--save-as', 'cbz'
     ]
-
     if selection_type == 'range':
-        if chapter_start:
-            cmd_dl.extend(['--start-chapter', chapter_start])
-        if chapter_end:
-            cmd_dl.extend(['--end-chapter', chapter_end])
+        if chapter_start: cmd_dl.extend(['--start-chapter', chapter_start])
+        if chapter_end: cmd_dl.extend(['--end-chapter', chapter_end])
 
     try:
-        print(f"Downloading Manga: {' '.join(cmd_dl)}")
+        print(f"Downloading: {cmd_dl}")
         subprocess.run(cmd_dl, check=True, text=True)
         
-        # Now find the downloaded CBZ file(s) in dl_path
-        # Note: mangadex-downloader might create subfolders. We need to find the files.
+        # 2. Find Files
         downloaded_files = []
         for root, dirs, files in os.walk(dl_path):
             for file in files:
-                if file.endswith('.cbz') or file.endswith('.zip') or file.endswith('.cb7'):
+                if file.endswith(('.cbz', '.zip', '.cb7')):
                     downloaded_files.append(os.path.join(root, file))
 
         if not downloaded_files:
-            return "Error: No chapters downloaded. Check ID or Language.", 500
+            return "Error: No chapters downloaded.", 500
 
-        # Run KCC on the downloaded file(s)
-        # If multiple chapters, we might want to merge or just convert the first one for now?
-        # KCC can handle multiple files if we pass them.
-        
-        # Let's process the FIRST file found for simplicity in this version, 
-        # or merge them if you want volumes. KCC batch converts if given a list.
-        
-        # We will move the file to OUTPUT_FOLDER after conversion
-        converted_zip_path = None
-        
-        # Run KCC on the folder containing the CBZs
-        # kcc-c2e [options] --output [OUTPUT] [INPUT_FILE]
+        # 3. Convert
         kcc_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', OUTPUT_FOLDER]
         if upscale: kcc_cmd.append('--upscale')
         if manga_style: kcc_cmd.append('--manga-style')
-        
-        # Pass all downloaded files to KCC
         kcc_cmd.extend(downloaded_files)
         
-        print(f"Running KCC: {' '.join(kcc_cmd)}")
+        print(f"Converting: {kcc_cmd}")
         kcc_result = subprocess.run(kcc_cmd, capture_output=True, text=True)
-
         if kcc_result.returncode != 0:
             return f"KCC Error: <pre>{kcc_result.stderr}</pre>", 500
 
-        # Zip up the results if multiple, or send single file
+        # 4. Bundle & Send
         output_files = [os.path.join(OUTPUT_FOLDER, f) for f in os.listdir(OUTPUT_FOLDER) 
-                       if os.path.isfile(os.path.join(OUTPUT_FOLDER, f))]
+                       if os.path.isfile(os.path.join(OUTPUT_FOLDER, f)) and not f.endswith('.zip')]
         
-        # Filter for files created just now (simple heuristic: files in output folder)
-        # Ideally we clean output folder before run.
+        # Simple Logic: If 1 file, send it. If multiple, zip them.
+        final_file = output_files[0] # Default to first
         
-        if len(output_files) == 1:
-            final_file = output_files[0]
-        else:
-            # Zip multiple chapters into one pack
+        if len(output_files) > 1:
             shutil.make_archive(os.path.join(OUTPUT_FOLDER, 'batch_convert'), 'zip', OUTPUT_FOLDER)
             final_file = os.path.join(OUTPUT_FOLDER, 'batch_convert.zip')
+        elif len(output_files) == 1:
+            final_file = output_files[0]
+        else:
+             return f"Conversion finished but no output found. Log: {kcc_result.stdout}", 500
 
         @after_this_request
         def cleanup(response):
             try:
-                shutil.rmtree(dl_path) # Remove source
-                for f in os.listdir(OUTPUT_FOLDER): # Clean output
+                shutil.rmtree(dl_path)
+                for f in os.listdir(OUTPUT_FOLDER):
                     os.remove(os.path.join(OUTPUT_FOLDER, f))
-            except Exception as e:
-                print(e)
+            except Exception as e: print(e)
             return response
 
         return send_file(final_file, as_attachment=True)
 
-    except subprocess.CalledProcessError as e:
-        return f"Download Error: {str(e)}", 500
     except Exception as e:
         return f"System Error: {str(e)}", 500
 
 @app.route('/convert', methods=['POST'])
 def convert():
-    # ... (Keep existing manual upload logic here from previous step) ...
-    if 'file' not in request.files:
-        return "No file uploaded", 400
+    if 'file' not in request.files: return "No file", 400
     file = request.files['file']
-    if file.filename == '':
-        return "No file selected", 400
+    if file.filename == '': return "No file", 400
+
     input_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(input_path)
+
+    profile = request.form.get('profile', 'KV')
+    format_type = request.form.get('format', 'MOBI')
+    upscale = request.form.get('upscale') == 'on'
+    manga_style = request.form.get('manga_style') == 'on'
+
+    cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', OUTPUT_FOLDER]
+    if upscale: cmd.append('--upscale')
+    if manga_style: cmd.append('--manga-style')
+    cmd.append(input_path)
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0: return f"Error: {result.stderr}", 500
+
+    # Find result
+    base_name = os.path.splitext(file.filename)[0]
+    # Rough search for the file
+    converted_file = None
+    for f in os.listdir(OUTPUT_FOLDER):
+        if base_name in f and (f.endswith('.mobi') or f.endswith('.epub') or f.endswith('.azw3')):
+             converted_file = os.path.join(OUTPUT_FOLDER, f)
+             break
     
-    # ... Copy the rest of the logic from the PREVIOUS app.py for manual upload ...
-    # (For brevity, I assume you keep the 'convert' function
+    if converted_file:
+        @after_this_request
+        def cleanup(response):
+            os.remove(input_path)
+            os.remove(converted_file)
+            return response
+        return send_file(converted_file, as_attachment=True)
+    return f"Error: Output not found. Log: {result.stdout}", 500
+
+if __name__ == '__main__':
+    # Host 0.0.0.0 is MANDATORY for Docker
+    app.run(host='0.0.0.0', port=5000)
