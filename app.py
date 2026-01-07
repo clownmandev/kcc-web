@@ -15,7 +15,8 @@ BASE_DIR = '/tmp'
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'kcc_uploads')
 OUTPUT_FOLDER = os.path.join(BASE_DIR, 'kcc_output')
 DOWNLOAD_FOLDER = os.path.join(BASE_DIR, 'kcc_downloads')
-# CRITICAL: Temp folder for zipping to prevent infinite loop
+
+# CRITICAL FIX: Temp folder for zipping to prevent infinite loop
 ZIP_TEMP = os.path.join(BASE_DIR, 'kcc_temp_zips')
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
