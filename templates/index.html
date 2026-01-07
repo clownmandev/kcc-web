@@ -327,4 +327,34 @@
                     </select>
                 </div>
                 <div>
-                    <label>Output Format
+                    <label>Output Format</label>
+                    <select id="kcc-format">
+                        <option value="EPUB" selected>EPUB (Modern Readers / Tablets)</option>
+                        <option value="MOBI">MOBI (Old Kindles)</option>
+                        <option value="CBZ">CBZ (Raw Images)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="checkbox-group">
+                <label class="checkbox-label" title="Merges all downloaded chapters/volumes into a single output file">
+                    <input type="checkbox" id="kcc-combine" checked> 
+                    Combine Chapters into 1 File
+                </label>
+                <label class="checkbox-label" title="Splits 2-page spreads into two separate pages for easier reading">
+                    <input type="checkbox" id="kcc-splitter" checked> 
+                    Split Double-Pages
+                </label>
+                <label class="checkbox-label" title="Increases resolution for sharper text">
+                    <input type="checkbox" id="kcc-upscale" checked> 
+                    Upscale Images
+                </label>
+            </div>
+            
+            <button class="success" onclick="startProcess()">Start Conversion Process</button>
+        </div>
+
+        <div id="log-window"></div>
+    </div>
+</body>
+</html>
