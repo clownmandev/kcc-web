@@ -3,294 +3,228 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KCC Web Suite v4</title>
+    <title>KCC Web Suite v5.2</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f4f6f8; color: #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f4f6f8; color: #333; }
         .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        
-        /* TABS */
         .tabs { display: flex; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; }
         .tab { padding: 12px 24px; cursor: pointer; color: #666; font-weight: 600; }
-        .tab:hover { background: #f9f9f9; }
         .tab.active { border-bottom: 3px solid #007bff; color: #007bff; margin-bottom: -2px; }
-        .tab-content { display: none; animation: fadeIn 0.3s; }
+        .tab-content { display: none; }
         .tab-content.active { display: block; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-        /* FORMS & INPUTS */
         .input-group { display: flex; gap: 10px; margin-bottom: 1rem; }
-        input[type="text"], input[type="number"], select { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: background 0.2s; }
+        input, select { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         button:hover { background: #0056b3; }
         button.secondary { background: #6c757d; }
-        button.secondary:hover { background: #5a6268; }
-        
-        /* SEARCH RESULTS */
-        #results { margin-top: 20px; max-height: 500px; overflow-y: auto; display: grid; grid-template-columns: 1fr; gap: 10px; }
-        .manga-item { border: 1px solid #eee; padding: 15px; background: white; border-radius: 8px; display: flex; gap: 15px; align-items: start; transition: transform 0.1s; }
-        .manga-item:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-        .manga-thumb { width: 80px; height: 120px; object-fit: cover; border-radius: 4px; background: #ddd; flex-shrink: 0; }
-        .manga-info { flex-grow: 1; }
-        .manga-info h3 { margin: 0 0 5px 0; font-size: 1.1rem; }
-        .manga-desc { font-size: 0.85rem; color: #666; margin-bottom: 10px; line-height: 1.4; }
-
-        /* SELECTION BOX */
-        .selection-box { background: #eef2f5; padding: 15px; border-radius: 8px; border: 1px solid #dde2e5; margin-bottom: 20px; }
-        .selection-header { font-weight: bold; color: #007bff; margin-bottom: 10px; font-size: 1.1rem; }
-
-        /* LOG WINDOW */
-        #log-window { 
-            background: #1e1e1e; color: #00ff00; font-family: 'Consolas', monospace; 
-            padding: 15px; height: 350px; overflow-y: scroll; 
-            margin-top: 20px; display: none; border-radius: 8px;
-            font-size: 0.9rem; line-height: 1.4;
-        }
-        .status-line { color: #fff; background: #333; padding: 5px 10px; margin: 5px -10px; }
-        .error-line { color: #ff4444; font-weight: bold; }
-        
-        /* Drag Drop Zone */
-        #drop-zone { border: 2px dashed #ccc; padding: 40px; text-align: center; color: #777; border-radius: 8px; cursor: pointer; }
-        #drop-zone.highlight { border-color: #007bff; background: #f0f7ff; color: #007bff; }
+        button.success { background: #28a745; width: 100%; padding: 15px; font-size: 1.1rem; }
+        #results { margin-top: 20px; max-height: 400px; overflow-y: auto; }
+        .manga-item { border: 1px solid #eee; padding: 15px; margin-bottom: 10px; background: white; border-radius: 8px; display: flex; gap: 15px; }
+        .manga-thumb { width: 80px; height: 120px; object-fit: cover; background: #ddd; flex-shrink: 0; }
+        #log-window { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; height: 400px; overflow-y: scroll; margin-top: 20px; display: none; border-radius: 8px; font-size: 0.9rem; }
+        .status-line { background: #333; color: white; padding: 5px 10px; margin: 5px -10px; }
+        .success-line { background: #28a745; color: white; padding: 15px; text-align: center; border-radius: 6px; margin: 10px 0; }
+        .success-line a { color: white; font-weight: bold; font-size: 1.2em; }
+        #selection-area { display: none; background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 15px; border: 1px solid #dee2e6; }
+        #manga-stats { font-weight: 500; color: #28a745; margin-bottom: 15px; }
+        .checkbox-label { display: flex; align-items: center; cursor: pointer; margin-right: 20px; background: #f1f1f1; padding: 8px 15px; border-radius: 20px; }
+        .checkbox-label input { width: auto; margin-right: 8px; }
     </style>
     <script>
-        let currentMode = 'mangadex'; // 'mangadex' or 'local'
+        let currentMode = 'mangadex';
         let uploadedFilename = null;
 
         function switchTab(mode) {
             currentMode = mode;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
             document.getElementById(`tab-${mode}`).classList.add('active');
             document.getElementById(`content-${mode}`).classList.add('active');
-            
-            // Show/Hide relevant controls
-            document.getElementById('mangadex-controls').style.display = (mode === 'mangadex') ? 'block' : 'none';
         }
 
-        // --- MANGADEX FUNCTIONS ---
         async function searchManga() {
             const query = document.getElementById('search-query').value;
             if(!query) return;
+            document.getElementById('btn-search').innerText = "Searching...";
             
-            const btn = document.getElementById('btn-search');
-            btn.innerText = "Searching..."; btn.disabled = true;
-
-            const res = await fetch('/api/search', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'query=' + encodeURIComponent(query)
+            const res = await fetch('/api/search', { 
+                method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'query=' + encodeURIComponent(query) 
             });
             const data = await res.json();
-            btn.innerText = "Search"; btn.disabled = false;
-
+            
+            document.getElementById('btn-search').innerText = "Search";
             const container = document.getElementById('results');
             container.innerHTML = '';
             
             if (data.error) { container.innerHTML = `<div style="color:red">Error: ${data.error}</div>`; return; }
-
+            
             data.forEach(m => {
-                // Escape title for function call
                 const safeTitle = m.title.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 container.innerHTML += `
                     <div class="manga-item">
-                        <img src="${m.cover}" class="manga-thumb" loading="lazy">
-                        <div class="manga-info">
-                            <h3>${m.title}</h3>
-                            <div class="manga-desc">${m.desc}</div>
+                        <img src="${m.cover}" class="manga-thumb">
+                        <div style="flex-grow:1;">
+                            <h3 style="margin:0 0 5px 0;">${m.title}</h3>
+                            <div style="font-size:0.85rem; color:#666; margin-bottom:10px;">${m.desc}</div>
                             <button onclick="selectManga('${m.id}', '${safeTitle}')" class="secondary">Select</button>
                         </div>
                     </div>`;
             });
-            container.style.display = 'grid';
         }
 
-        async function resolveLink() {
-            const link = document.getElementById('direct-link').value;
-            if(!link) return;
-            
-            const res = await fetch('/api/resolve_link', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'link=' + encodeURIComponent(link)
-            });
-            const data = await res.json();
-            
-            if (data.error) {
-                alert(data.error);
-            } else {
-                selectManga(data.id, data.title);
-            }
-        }
-
-        function selectManga(id, title) {
+        async function selectManga(id, title) {
             document.getElementById('selected-manga-id').value = id;
             document.getElementById('selected-manga-title').value = title;
             document.getElementById('selected-label').innerHTML = `Selected: <b>${title}</b>`;
             document.getElementById('selection-area').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
-            // Clear inputs to reduce clutter
-            document.getElementById('search-query').value = '';
-            document.getElementById('direct-link').value = '';
+            document.getElementById('results').innerHTML = '';
+            
+            const statsDiv = document.getElementById('manga-stats');
+            statsDiv.innerHTML = 'Fetching info...';
+            
+            try {
+                const res = await fetch('/api/manga_details', { 
+                    method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'manga_id=' + id 
+                });
+                const data = await res.json();
+                statsDiv.innerHTML = `Found: ${data.total_volumes} Volumes (Latest Ch. ${data.latest_chapter})`;
+                document.getElementById('vol-end').value = data.total_volumes > 0 ? data.total_volumes : 1;
+            } catch (e) { statsDiv.innerHTML = ''; }
         }
 
-        // --- LOCAL FILE FUNCTIONS ---
         async function uploadFile() {
-            const fileInput = document.getElementById('file-input');
-            const file = fileInput.files[0];
+            const file = document.getElementById('file-input').files[0];
             if (!file) return;
-
             const formData = new FormData();
             formData.append('file', file);
-            
-            const statusDiv = document.getElementById('upload-status');
-            statusDiv.innerHTML = "Uploading... Please wait.";
-
+            document.getElementById('upload-status').innerText = "Uploading...";
             const res = await fetch('/api/upload', { method: 'POST', body: formData });
             const data = await res.json();
-
             if (data.status === 'success') {
                 uploadedFilename = data.filename;
-                statusDiv.innerHTML = `Ready to convert: <b>${data.filename}</b>`;
-                document.getElementById('btn-local-start').disabled = false;
-            } else {
-                statusDiv.innerHTML = `Upload Failed: ${data.error}`;
+                document.getElementById('upload-status').innerHTML = `Ready: <b>${data.filename}</b>`;
             }
         }
 
-        // --- PROCESS ---
         function startProcess() {
             const logWin = document.getElementById('log-window');
             logWin.style.display = 'block';
-            logWin.innerHTML = '<div class="status-line">Initializing Request...</div>';
-
-            const profile = document.getElementById('kcc-profile').value;
-            const format = document.getElementById('kcc-format').value;
+            logWin.innerHTML = '<div class="status-line">Connecting...</div>';
+            
             const params = new URLSearchParams({
-                profile: profile,
-                format: format,
-                upscale: 'true',
-                manga_style: 'true',
+                profile: document.getElementById('kcc-profile').value,
+                format: document.getElementById('kcc-format').value,
+                upscale: document.getElementById('kcc-upscale').checked,
+                splitter: document.getElementById('kcc-splitter').checked,
+                combine: document.getElementById('kcc-combine').checked,
                 mode: currentMode
             });
 
             if (currentMode === 'mangadex') {
-                const id = document.getElementById('selected-manga-id').value;
-                const title = document.getElementById('selected-manga-title').value;
-                const start = document.getElementById('vol-start').value;
-                const end = document.getElementById('vol-end').value;
+                if(!document.getElementById('selected-manga-id').value) { alert("Select manga first"); return; }
+                params.append('manga_id', document.getElementById('selected-manga-id').value);
+                params.append('manga_title', document.getElementById('selected-manga-title').value);
                 
-                if(!id) { alert("Please select a manga first."); return; }
-                
-                params.append('manga_id', id);
-                params.append('manga_title', title);
-                params.append('vol_start', start);
-                params.append('vol_end', end);
+                // Add Volume and Chapter params
+                const volStart = document.getElementById('vol-start').value;
+                const volEnd = document.getElementById('vol-end').value;
+                const chapStart = document.getElementById('chap-start').value;
+                const chapEnd = document.getElementById('chap-end').value;
 
+                if (volStart) params.append('vol_start', volStart);
+                if (volEnd) params.append('vol_end', volEnd);
+                if (chapStart) params.append('chap_start', chapStart);
+                if (chapEnd) params.append('chap_end', chapEnd);
+                
             } else {
-                if(!uploadedFilename) { alert("Please upload a file first."); return; }
+                if(!uploadedFilename) { alert("Upload file first"); return; }
                 params.append('filename', uploadedFilename);
             }
 
             const evtSource = new EventSource("/stream_convert?" + params.toString());
-
             evtSource.onmessage = function(e) {
                 if (e.data.startsWith("DONE:")) {
                     const filename = e.data.replace("DONE: ", "").trim();
-                    logWin.innerHTML += `<div class="status-line" style="background:#28a745;">SUCCESS! Downloading ${filename}...</div>`;
+                    logWin.innerHTML += `<div class="success-line">DONE!<br><a href="/download_file/${filename}">Click to Download ${filename}</a></div>`;
                     evtSource.close();
                     window.location.href = "/download_file/" + filename;
                 } else if (e.data.startsWith("STATUS:")) {
                     logWin.innerHTML += `<div class="status-line">${e.data.replace("STATUS:", "")}</div>`;
                 } else if (e.data.startsWith("ERROR:")) {
-                     logWin.innerHTML += `<div class="error-line">${e.data}</div>`;
-                     evtSource.close();
+                    logWin.innerHTML += `<div style="color:red; font-weight:bold;">${e.data}</div>`;
+                    evtSource.close();
                 } else {
                     logWin.innerHTML += `<div>${e.data.replace("LOG:", "")}</div>`;
                 }
                 logWin.scrollTop = logWin.scrollHeight;
             };
-            
-            evtSource.onerror = () => evtSource.close();
         }
     </script>
 </head>
 <body>
     <div class="container">
-        <h1 style="margin-top:0;">KCC Web Suite <span style="font-size:0.5em; color:#888;">v4.0</span></h1>
-        
+        <h1>KCC Web Suite v5.2</h1>
         <div class="tabs">
-            <div class="tab active" id="tab-mangadex" onclick="switchTab('mangadex')">Mangadex Downloader</div>
-            <div class="tab" id="tab-local" onclick="switchTab('local')">Local File Converter</div>
+            <div class="tab active" id="tab-mangadex" onclick="switchTab('mangadex')">Mangadex</div>
+            <div class="tab" id="tab-local" onclick="switchTab('local')">Local File</div>
         </div>
 
         <div id="content-mangadex" class="tab-content active">
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
-                <div>
-                    <label>Search Title</label>
-                    <div class="input-group">
-                        <input type="text" id="search-query" placeholder="e.g. Naruto">
-                        <button id="btn-search" onclick="searchManga()">Search</button>
-                    </div>
-                </div>
-                <div>
-                    <label>Or Paste Direct Link</label>
-                    <div class="input-group">
-                        <input type="text" id="direct-link" placeholder="https://mangadex.org/title/...">
-                        <button class="secondary" onclick="resolveLink()">Load</button>
-                    </div>
-                </div>
+            <div class="input-group">
+                <input type="text" id="search-query" placeholder="Manga Title">
+                <button id="btn-search" onclick="searchManga()">Search</button>
             </div>
-
             <div id="results"></div>
-
-            <div id="selection-area" class="selection-box" style="display:none; margin-top:15px;">
-                <div id="selected-label" class="selection-header"></div>
+            <div id="selection-area">
+                <div id="selected-label"></div>
+                <div id="manga-stats"></div>
                 <input type="hidden" id="selected-manga-id">
                 <input type="hidden" id="selected-manga-title">
                 
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-                    <div><label>Start Vol:</label><input type="number" id="vol-start" value="1"></div>
-                    <div><label>End Vol:</label><input type="number" id="vol-end" value="1"></div>
+                <div style="background:#eef; padding:15px; border-radius:8px; margin-bottom:15px;">
+                    <div style="font-weight:bold; margin-bottom:10px; color:#555;">Option 1: Select by Volume</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <div><label>Start Vol</label><input type="number" id="vol-start" value="1"></div>
+                        <div><label>End Vol</label><input type="number" id="vol-end" value="1"></div>
+                    </div>
+                </div>
+
+                <div style="background:#fee; padding:15px; border-radius:8px; margin-bottom:15px;">
+                    <div style="font-weight:bold; margin-bottom:10px; color:#555;">Option 2: Select by Chapter (Overrides Vol)</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <div><label>Start Chapter</label><input type="number" id="chap-start" placeholder="Optional (e.g. 1)"></div>
+                        <div><label>End Chapter</label><input type="number" id="chap-end" placeholder="Optional (e.g. 8)"></div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <div id="content-local" class="tab-content">
-            <div id="drop-zone" onclick="document.getElementById('file-input').click()">
-                <h3>Click to Upload File</h3>
-                <p>Supports .zip, .cbz, .pdf, .epub</p>
+            <div onclick="document.getElementById('file-input').click()" style="border:2px dashed #ccc; padding:40px; text-align:center; cursor:pointer;">
+                Click to Upload .CBZ/.ZIP
                 <input type="file" id="file-input" style="display:none" onchange="uploadFile()">
             </div>
-            <div id="upload-status" style="margin-top:15px; font-weight:bold; color:#007bff;"></div>
+            <div id="upload-status"></div>
         </div>
 
-        <div style="margin-top:30px; padding-top:20px; border-top:2px solid #eee;">
-            <h3>Conversion Settings</h3>
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:20px;">
-                <div>
-                    <label>Device Profile</label>
-                    <select id="kcc-profile">
-                        <option value="KV" selected>Kindle Paperwhite 3/4 / Voyage</option>
-                        <option value="KPW">Kindle Paperwhite 1/2</option>
-                        <option value="KO">Kindle Oasis</option>
-                        <option value="OTHER">Other / Generic</option>
-                    </select>
-                </div>
-                <div>
-                    <label>Output Format</label>
-                    <select id="kcc-format">
-                        <option value="MOBI" selected>MOBI (Old Kindles)</option>
-                        <option value="EPUB">EPUB (Modern Readers)</option>
-                        <option value="CBZ">CBZ (Raw)</option>
-                    </select>
-                </div>
+        <div style="margin-top:30px; border-top:1px solid #eee; padding-top:20px;">
+            <div style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:20px;">
+                <label class="checkbox-label"><input type="checkbox" id="kcc-combine"> Combine into 1 File</label>
+                <label class="checkbox-label"><input type="checkbox" id="kcc-splitter" checked> Split Spreads</label>
+                <label class="checkbox-label"><input type="checkbox" id="kcc-upscale" checked> Upscale</label>
             </div>
-            
-            <button onclick="startProcess()" style="width:100%; padding:15px; background:#28a745;" id="btn-start">Start Conversion</button>
-            <button id="btn-local-start" onclick="startProcess()" style="display:none;">(Hidden Logic Trigger)</button>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:20px;">
+                <select id="kcc-profile">
+                    <option value="KPW" selected>Kindle PW 1/2</option>
+                    <option value="KV">Kindle PW 3+ / Oasis</option>
+                </select>
+                <select id="kcc-format">
+                    <option value="EPUB" selected>EPUB</option>
+                    <option value="MOBI">MOBI</option>
+                </select>
+            </div>
+            <button class="success" onclick="startProcess()">Start Conversion</button>
         </div>
-
         <div id="log-window"></div>
     </div>
 </body>
