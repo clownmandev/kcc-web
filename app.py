@@ -6,6 +6,7 @@ import sys
 import time
 import re
 import zipfile
+import glob
 from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
 from werkzeug.utils import secure_filename
 
@@ -21,8 +22,9 @@ COMBINE_DIR = os.path.join(BASE_DIR, 'kcc_combined')
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Ensure all directories exist on startup
+# Ensure all directories exist and are clean on startup
 for d in [UPLOAD_FOLDER, OUTPUT_FOLDER, DOWNLOAD_FOLDER, ZIP_TEMP, COMBINE_DIR]:
+    if os.path.exists(d): shutil.rmtree(d)
     os.makedirs(d, exist_ok=True)
 
 # --- HELPER FUNCTIONS ---
@@ -49,6 +51,67 @@ def extract_id_from_url(url):
     match = re.search(r'title/([a-f0-9\-]+)', url)
     return match.group(1) if match else None
 
+def is_image_dir(path):
+    """Checks if a directory contains image files."""
+    if not os.path.isdir(path): return False
+    for ext in ['*.jpg', '*.jpeg', '*.png', '*.webp', '*.gif']:
+        if glob.glob(os.path.join(path, ext)):
+            return True
+    return False
+
+def scrape_website_images(url, save_folder):
+    """
+    A generic scraper for Mangabat/Kakalot/Buddy.
+    Downloads images from a CHAPTER URL to the save_folder.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': url  # Critical for some sites to allow image hotlinking
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        html = response.text
+        
+        # Regex to find image links. 
+        # Most manga sites use <img src="..."> inside a container. 
+        # We look for common image extensions.
+        img_urls = re.findall(r'src="([^"]+?\.(?:jpg|jpeg|png|webp))"', html)
+        
+        # De-duplicate
+        img_urls = list(dict.fromkeys(img_urls))
+        
+        if not img_urls:
+            yield "LOG: No images found. Only Chapter URLs are supported for these sites (not main title pages).\n"
+            return
+
+        yield f"LOG: Found {len(img_urls)} images. Downloading...\n"
+
+        for i, img_url in enumerate(img_urls):
+            try:
+                # Handle relative URLs if necessary
+                if not img_url.startswith('http'):
+                    continue # Skip complex relative paths for simplicity
+                
+                img_name = f"page_{i:04d}.jpg"
+                img_save_path = os.path.join(save_folder, img_name)
+                
+                # Stream download to disk (RAM safe)
+                with requests.get(img_url, headers=headers, stream=True, timeout=10) as r:
+                    r.raise_for_status()
+                    with open(img_save_path, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                
+                yield f"LOG: Downloaded page {i+1}/{len(img_urls)}\n"
+                
+            except Exception as e:
+                yield f"LOG: Failed to download image {i+1}: {e}\n"
+
+    except Exception as e:
+        yield f"ERROR: Scraping failed: {e}\n"
+
 # --- API ROUTES ---
 
 @app.route('/')
@@ -57,6 +120,7 @@ def index():
 
 @app.route('/api/search', methods=['POST'])
 def search_manga():
+    # Only used for Mangadex
     query = request.form.get('query')
     if not query: return jsonify({'error': 'No query provided'}), 400
     
@@ -87,22 +151,9 @@ def search_manga():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/resolve_link', methods=['POST'])
-def resolve_link():
-    link = request.form.get('link')
-    manga_id = extract_id_from_url(link)
-    if not manga_id: return jsonify({'error': 'Invalid Mangadex URL'}), 400
-    try:
-        r = requests.get(f"https://api.mangadex.org/manga/{manga_id}")
-        data = r.json()
-        attr = data['data']['attributes']
-        title = attr['title'].get('en') or list(attr['title'].values())[0]
-        return jsonify({'id': manga_id, 'title': title})
-    except Exception as e:
-        return jsonify({'error': f'Failed to fetch details: {str(e)}'}), 500
-
 @app.route('/api/manga_details', methods=['POST'])
 def get_manga_details():
+    # Mangadex only
     manga_id = request.form.get('manga_id')
     if not manga_id: return jsonify({'error': 'No ID provided'}), 400
     try:
@@ -136,9 +187,9 @@ def upload_file():
     if file.filename == '': return jsonify({'error': 'No selected file'}), 400
     if file:
         filename = secure_filename(file.filename)
-        if os.path.exists(UPLOAD_FOLDER): shutil.rmtree(UPLOAD_FOLDER)
-        os.makedirs(UPLOAD_FOLDER)
-        file.save(os.path.join(UPLOAD_FOLDER, filename))
+        # We append a timestamp to avoid conflicts
+        save_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(save_path)
         return jsonify({'status': 'success', 'filename': filename})
 
 @app.route('/stream_convert')
@@ -147,20 +198,20 @@ def stream_convert():
         mode = request.args.get('mode', 'mangadex') 
         profile = request.args.get('profile', 'KPW') 
         format_type = request.args.get('format', 'EPUB')
-        upscale = request.args.get('upscale') == 'true'
-        manga_style = request.args.get('manga_style') == 'true'
-        splitter = request.args.get('splitter') == 'true'
+        
+        # REMOVED: upscale and splitter args
+        
         combine = request.args.get('combine') == 'true'
-        url_input = request.args.get('url_input', '')
 
         if os.path.exists(OUTPUT_FOLDER): shutil.rmtree(OUTPUT_FOLDER)
         os.makedirs(OUTPUT_FOLDER)
+        
         yield "data: STATUS: Initializing... \n\n"
 
-        target_files = []
+        target_inputs = [] 
         final_title = "Converted_Manga"
         
-        # --- MANGADEX MODE ---
+        # --- MODE: MANGADEX ---
         if mode == 'mangadex':
             manga_id = request.args.get('manga_id')
             manga_title = request.args.get('manga_title', 'Manga')
@@ -170,92 +221,78 @@ def stream_convert():
             chap_end = request.args.get('chap_end')
             
             clean_title = re.sub(r'[\\/*?:"<>|]', "", manga_title).strip()
-            if not clean_title: clean_title = "Manga_Download"
-            
-            if chap_start and chap_end: final_title = f"{clean_title} Ch {chap_start}-{chap_end}"
-            elif vol_start and vol_end: final_title = f"{clean_title} Vol {vol_start}-{vol_end}"
-            else: final_title = clean_title
+            final_title = clean_title
 
             dl_path = os.path.join(DOWNLOAD_FOLDER, manga_id)
             if os.path.exists(dl_path): shutil.rmtree(dl_path)
 
-            cmd_dl = ['mangadex-downloader', f"https://mangadex.org/title/{manga_id}", '--language', 'en', '--folder', dl_path, '--no-group-name', '--save-as', 'cbz']
+            cmd_dl = ['mangadex-downloader', f"https://mangadex.org/title/{manga_id}", '--language', 'en', '--folder', dl_path, '--no-group-name']
+            
             if vol_start and vol_end: cmd_dl.extend(['--start-volume', vol_start, '--end-volume', vol_end])
             if chap_start: cmd_dl.extend(['--start-chapter', chap_start])
             if chap_end: cmd_dl.extend(['--end-chapter', chap_end])
             
             yield "data: STATUS: Downloading from Mangadex... \n\n"
-            for line in run_command_with_retry(cmd_dl): yield f"data: LOG: {line.strip()}\n\n"
+            for line in run_command_with_retry(cmd_dl):
+                if "api.mangadex.network/report" not in line:
+                    yield f"data: LOG: {line.strip()}\n\n"
 
             for root, dirs, files in os.walk(dl_path):
+                if is_image_dir(root): target_inputs.append(root)
                 for file in files:
-                    if file.endswith(('.cbz', '.zip', '.cb7', '.epub')):
-                        target_files.append(os.path.abspath(os.path.join(root, file)))
+                    if file.endswith(('.cbz', '.zip', '.epub')):
+                        target_inputs.append(os.path.join(root, file))
 
-        # --- GENERIC URL MODE (MangaFire, etc) ---
-        elif mode == 'url':
-            if not url_input:
+        # --- MODE: OTHER SITES (Scraper) ---
+        elif mode in ['mangabat', 'mangabuddy', 'mangakakalot']:
+            chapter_url = request.args.get('chapter_url')
+            if not chapter_url:
                 yield "data: ERROR: No URL provided.\n\n"
                 return
-            
-            final_title = "Web_Download"
-            dl_path = os.path.join(DOWNLOAD_FOLDER, 'web_dl')
-            if os.path.exists(dl_path): shutil.rmtree(dl_path)
-            os.makedirs(dl_path)
 
-            yield f"data: STATUS: Fetching from {url_input}... (This may take a while) \n\n"
+            yield f"data: STATUS: Scraping images from {mode}... \n\n"
             
-            # gallery-dl command
-            cmd_dl = ['gallery-dl', '--dest', dl_path, url_input]
+            # Create a folder for this scrape
+            site_dl_path = os.path.join(DOWNLOAD_FOLDER, 'scraped_chapter')
+            if os.path.exists(site_dl_path): shutil.rmtree(site_dl_path)
+            os.makedirs(site_dl_path)
             
-            for line in run_command_with_retry(cmd_dl):
-                yield f"data: LOG: {line.strip()}\n\n"
+            # Run the python scraper
+            for log in scrape_website_images(chapter_url, site_dl_path):
+                yield f"data: LOG: {log}"
             
-            # gallery-dl creates subfolders. We need to find the images.
-            # We treat the download folder as one giant source for "Combine"
-            # If "Combine" is OFF, we might have issues if gallery-dl made deep folders, 
-            # so for URL mode, we enforce a flattened structure logic via the combiner below.
-            
-            # Just verify we got files
-            has_files = False
-            for root, dirs, files in os.walk(dl_path):
-                if any(f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')) for f in files):
-                    has_files = True
-                    break
-            
-            if has_files:
-                # We point the system to this folder. 
-                # The 'Combine' logic below becomes essential to flatten gallery-dl's folder structure.
-                combine = True 
-                target_files = [dl_path] # Placeholder to trigger logic
-                
-                # Attempt to guess title from folder name gallery-dl created
-                try:
-                    subdirs = [d for d in os.listdir(dl_path) if os.path.isdir(os.path.join(dl_path, d))]
-                    if subdirs: final_title = subdirs[0] # Usually site name or manga name
-                except: pass
+            # Check if we got images
+            if is_image_dir(site_dl_path):
+                target_inputs.append(site_dl_path)
+                final_title = f"{mode}_scrape"
             else:
-                 yield "data: ERROR: No images found. Cloudflare might have blocked the download.\n\n"
-                 return
+                yield "data: ERROR: No images could be scraped. Ensure you used a CHAPTER URL.\n\n"
+                return
 
-        # --- LOCAL MODE ---
+        # --- MODE: LOCAL FILE (PDF/EPUB/CBZ) ---
         elif mode == 'local':
             filename = request.args.get('filename')
             final_title = os.path.splitext(filename)[0]
             local_path = os.path.join(UPLOAD_FOLDER, filename)
-            if os.path.exists(local_path): target_files.append(os.path.abspath(local_path))
+            
+            if os.path.exists(local_path):
+                target_inputs.append(local_path)
+                yield f"data: STATUS: Processing local file: {filename}\n\n"
             else:
-                yield "data: ERROR: File not found.\n\n"
+                yield "data: ERROR: File not found on server.\n\n"
                 return
 
-        if not target_files:
-            yield "data: ERROR: No content found.\n\n"
+        if not target_inputs:
+            yield "data: ERROR: No content to convert.\n\n"
             return
 
         # --- COMBINE LOGIC ---
-        # We use this for Mangadex (multi-chapter) AND URL mode (nested folders)
-        if combine:
-            yield f"data: STATUS: Processing and merging images... \n\n"
+        # Only combine if explicitly requested AND we have multiple inputs OR we are in Mangadex mode (folder based)
+        # Note: PDF/EPUBs usually shouldn't be "Combined" in this way, KCC handles them singly.
+        is_document = any(f.endswith(('.pdf', '.epub', '.mobi')) for f in target_inputs if isinstance(f, str))
+        
+        if combine and not is_document and (len(target_inputs) > 1 or mode == 'mangadex'):
+            yield f"data: STATUS: Merging chapters... \n\n"
             
             safe_name = secure_filename(final_title)
             if not safe_name: safe_name = "Combined_Manga"
@@ -264,25 +301,22 @@ def stream_convert():
             if os.path.exists(combined_path): shutil.rmtree(combined_path)
             os.makedirs(combined_path)
             
-            target_files.sort()
+            target_inputs.sort()
             
             img_idx = 0
-            # Walk through ALL target paths (zip files or directories)
-            for target in target_files:
-                # Case A: It's a directory (from gallery-dl)
-                if os.path.isdir(target):
-                    for root, dirs, files in os.walk(target):
-                        images = sorted([f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
-                        for img in images:
-                            img_idx += 1
-                            ext = os.path.splitext(img)[1]
-                            new_name = f"img_{img_idx:06d}{ext}"
-                            shutil.copy(os.path.join(root, img), os.path.join(combined_path, new_name))
-                
-                # Case B: It's a Zip/CBZ (from mangadex/local)
-                elif zipfile.is_zipfile(target):
-                    try:
-                        with zipfile.ZipFile(target, 'r') as z:
+            for src in target_inputs:
+                try:
+                    if os.path.isdir(src):
+                        images = sorted(glob.glob(os.path.join(src, '*')))
+                        for img_path in images:
+                            if img_path.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')):
+                                img_idx += 1
+                                ext = os.path.splitext(img_path)[1]
+                                new_name = f"img_{img_idx:06d}{ext}"
+                                shutil.copy(img_path, os.path.join(combined_path, new_name))
+                                
+                    elif zipfile.is_zipfile(src):
+                        with zipfile.ZipFile(src, 'r') as z:
                             images = sorted([f for f in z.namelist() if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
                             for img in images:
                                 img_idx += 1
@@ -290,28 +324,31 @@ def stream_convert():
                                 new_name = f"img_{img_idx:06d}{ext}"
                                 with open(os.path.join(combined_path, new_name), 'wb') as f_out:
                                     f_out.write(z.read(img))
-                    except Exception as e:
-                        yield f"data: LOG: Skip {os.path.basename(target)}: {e}\n\n"
+                except Exception as e:
+                    yield f"data: LOG: Merge Warning: {e}\n\n"
             
-            target_files = [combined_path]
+            target_inputs = [combined_path]
 
         # --- CONVERT ---
         yield "data: STATUS: Starting KCC Conversion... \n\n"
+        
+        # Basic KCC command without upscale/split
         kcc_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', OUTPUT_FOLDER]
-        if upscale: kcc_cmd.append('-u')
-        if manga_style: kcc_cmd.append('-m')
-        if splitter: kcc_cmd.extend(['-s', '1'])
-        kcc_cmd.extend(target_files)
+        
+        # Add inputs
+        kcc_cmd.extend(target_inputs)
         
         yield f"data: LOG: Cmd: {' '.join(kcc_cmd)}\n\n"
-        for line in run_command_with_retry(kcc_cmd): yield f"data: LOG: {line.strip()}\n\n"
+        for line in run_command_with_retry(kcc_cmd):
+             yield f"data: LOG: {line.strip()}\n\n"
 
         # --- PACKAGING ---
         yield "data: STATUS: Finalizing... \n\n"
-        output_files = [f for f in os.listdir(OUTPUT_FOLDER) if f.endswith(('.mobi', '.epub', '.azw3', '.cbz'))]
+        
+        output_files = [f for f in os.listdir(OUTPUT_FOLDER) if f.endswith(('.mobi', '.epub', '.azw3', '.cbz', '.kpub'))]
         
         if not output_files:
-            yield "data: ERROR: No output generated.\n\n"
+            yield "data: ERROR: Conversion finished but no output file found. (Did KCC fail?)\n\n"
             return
 
         if len(output_files) == 1:
