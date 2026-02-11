@@ -147,15 +147,28 @@ def stream_convert():
                     vol_dl_path = os.path.join(DOWNLOAD_FOLDER, vol_uuid)
                     os.makedirs(vol_dl_path, exist_ok=True)
 
-                    cmd_dl = [
-                        'mangadex-downloader',
-                        f"https://mangadex.org/title/{manga_id}",
-                        '--language', 'en',
-                        '--folder', vol_dl_path,
-                        '--no-group-name',
-                        '--start-volume', str(current_vol),
-                        '--end-volume', str(current_vol)
-                    ]
+                    # --- FIXED: Now includes Chapter Arguments ---
+                    cmd_dl = []
+                    cmd_dl.append('mangadex-downloader')
+                    cmd_dl.append(f"https://mangadex.org/title/{manga_id}")
+                    cmd_dl.append('--language')
+                    cmd_dl.append('en')
+                    cmd_dl.append('--folder')
+                    cmd_dl.append(vol_dl_path)
+                    cmd_dl.append('--no-group-name')
+                    # Volume args
+                    cmd_dl.append('--start-volume')
+                    cmd_dl.append(str(current_vol))
+                    cmd_dl.append('--end-volume')
+                    cmd_dl.append(str(current_vol))
+                    
+                    # Chapter args (THIS IS WHAT WAS MISSING)
+                    if request.args.get('chap_start'):
+                        cmd_dl.append('--start-chapter')
+                        cmd_dl.append(request.args.get('chap_start'))
+                    if request.args.get('chap_end'):
+                        cmd_dl.append('--end-chapter')
+                        cmd_dl.append(request.args.get('chap_end'))
                     
                     dl_success = False
                     for line in run_command_with_retry(cmd_dl):
@@ -174,7 +187,7 @@ def stream_convert():
                         yield f"data: STATUS: Converting Volume {current_vol}... \n\n"
                         for line in run_command_with_retry(kcc_cmd): yield f"data: LOG: {line.strip()}\n\n"
                     else:
-                        yield f"data: LOG: Skipped Vol {current_vol} (No images found)\n\n"
+                        yield f"data: LOG: Skipped Vol {current_vol} (No images found or filtered by chapter)\n\n"
 
                     try:
                         shutil.rmtree(vol_dl_path)
