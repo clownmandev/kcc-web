@@ -3,11 +3,12 @@ services:
   kcc-web:
     build: .
     container_name: kcc-web
+    # CRITICAL: Maps the container's /tmp to your host's /home/app01/kcc_temp
+    # This prevents the container from ever filling up and crashing.
+    volumes:
+      - /home/app01/kcc_temp:/tmp
     ports:
       - "5005:5000"
     restart: unless-stopped
-    # 1. FIX THE CRASH: Give it 2GB of shared memory (Default is 64MB)
+    # CRITICAL: Gives the container 2GB of RAM buffer to prevent "Silent Implosions"
     shm_size: '2gb'
-    # 2. FIX THE STORAGE: Map temp folder to your Host so it never fills the container
-    volumes:
-      - ./kcc_temp:/tmp
