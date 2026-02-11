@@ -261,7 +261,16 @@ def stream_convert():
 
 @app.route('/download_file/<filename>')
 def download_file(filename):
-    return send_file(os.path.join(OUTPUT_FOLDER, filename), as_attachment=True)
+    # Default to the full name
+    clean_name = filename
+    
+    # Check if it starts with a UUID (36 chars) + Underscore (1 char) = 37 chars
+    # Example: ead8c778-a1ec-410d-b868-de6e66654605_Chainsaw_Man.epub
+    if len(filename) > 37 and filename[36] == '_':
+        # Slice off the first 37 characters
+        clean_name = filename[37:]
+
+    return send_file(os.path.join(OUTPUT_FOLDER, filename), as_attachment=True, download_name=clean_name)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
