@@ -6,3 +6,8 @@ services:
     ports:
       - "5005:5000"
     restart: unless-stopped
+    # 1. FIX THE CRASH: Give it 2GB of shared memory (Default is 64MB)
+    shm_size: '2gb'
+    # 2. FIX THE STORAGE: Map temp folder to your Host so it never fills the container
+    volumes:
+      - ./kcc_temp:/tmp
