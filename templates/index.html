@@ -1,137 +1,207 @@
-import os
-import subprocess
-import shutil
-import requests
-import sys
-import time
-import re
-import zipfile
-import glob
-import uuid
-from urllib.parse import urlparse
-from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
-from werkzeug.utils import secure_filename
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KCC Web Suite v6.2 (Ram Optimized)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f4f6f8; color: #333; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .tabs { display: flex; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; overflow-x: auto; }
+        .tab { padding: 12px 20px; cursor: pointer; color: #666; font-weight: 600; white-space: nowrap; }
+        .tab:hover { background: #f0f0f0; }
+        .tab.active { border-bottom: 3px solid #007bff; color: #007bff; margin-bottom: -2px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 1rem; }
+        input, select { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        button.secondary { background: #6c757d; }
+        button.success { background: #28a745; width: 100%; padding: 15px; font-size: 1.1rem; margin-top: 20px;}
+        #results { margin-top: 20px; max-height: 400px; overflow-y: auto; }
+        .manga-item { border: 1px solid #eee; padding: 15px; margin-bottom: 10px; background: white; border-radius: 8px; display: flex; gap: 15px; }
+        .manga-thumb { width: 80px; height: 120px; object-fit: cover; background: #ddd; flex-shrink: 0; }
+        #log-window { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; height: 300px; overflow-y: scroll; margin-top: 20px; display: none; border-radius: 8px; font-size: 0.9rem; }
+        .status-line { background: #333; color: white; padding: 5px 10px; margin: 5px -10px; }
+        .success-line { background: #28a745; color: white; padding: 15px; text-align: center; border-radius: 6px; margin: 10px 0; }
+        .success-line a { color: white; font-weight: bold; font-size: 1.2em; }
+        #selection-area { display: none; background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 15px; border: 1px solid #dee2e6; }
+        .checkbox-label { display: flex; align-items: center; cursor: pointer; margin-right: 20px; background: #f1f1f1; padding: 8px 15px; border-radius: 20px; }
+        .checkbox-label input { width: auto; margin-right: 8px; }
+    </style>
+    <script>
+        let currentMode = 'mangadex';
+        let uploadedFilename = null;
 
-app = Flask(__name__)
+        function switchTab(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`tab-${mode}`).classList.add('active');
+            document.getElementById(`content-${mode}`).classList.add('active');
+        }
 
-# --- CONFIGURATION ---
-BASE_DIR = '/tmp'
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'kcc_uploads')
-OUTPUT_FOLDER = os.path.join(BASE_DIR, 'kcc_output')
-DOWNLOAD_FOLDER = os.path.join(BASE_DIR, 'kcc_downloads')
-ZIP_TEMP = os.path.join(BASE_DIR, 'kcc_temp_zips')
-COMBINE_DIR = os.path.join(BASE_DIR, 'kcc_combined')
+        async function searchManga() {
+            const query = document.getElementById('search-query').value;
+            if(!query) return;
+            document.getElementById('btn-search').innerText = "Searching...";
+            const res = await fetch('/api/search', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'query=' + encodeURIComponent(query) });
+            const data = await res.json();
+            document.getElementById('btn-search').innerText = "Search";
+            const container = document.getElementById('results');
+            container.innerHTML = '';
+            if (data.error) { container.innerHTML = `<div style="color:red">Error: ${data.error}</div>`; return; }
+            data.forEach(m => {
+                const safeTitle = m.title.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                container.innerHTML += `
+                    <div class="manga-item">
+                        <img src="${m.cover}" class="manga-thumb">
+                        <div style="flex-grow:1;">
+                            <h3 style="margin:0 0 5px 0;">${m.title}</h3>
+                            <div style="font-size:0.85rem; color:#666; margin-bottom:10px;">${m.desc}</div>
+                            <button onclick="selectManga('${m.id}', '${safeTitle}')" class="secondary">Select</button>
+                        </div>
+                    </div>`;
+            });
+        }
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+        async function selectManga(id, title) {
+            document.getElementById('selected-manga-id').value = id;
+            document.getElementById('selected-manga-title').value = title;
+            document.getElementById('selected-label').innerHTML = `Selected: <b>${title}</b>`;
+            document.getElementById('selection-area').style.display = 'block';
+            document.getElementById('results').innerHTML = '';
+            
+            const statsDiv = document.getElementById('manga-stats');
+            statsDiv.innerHTML = 'Fetching info...';
+            try {
+                const res = await fetch('/api/manga_details', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'manga_id=' + id });
+                const data = await res.json();
+                statsDiv.innerHTML = `Found: ${data.total_volumes} Volumes (Latest Ch. ${data.latest_chapter})`;
+                document.getElementById('vol-end').value = data.total_volumes > 0 ? data.total_volumes : 1;
+            } catch (e) { statsDiv.innerHTML = ''; }
+        }
 
-# Ensure directories exist
-for d in [UPLOAD_FOLDER, OUTPUT_FOLDER, DOWNLOAD_FOLDER, ZIP_TEMP, COMBINE_DIR]:
-    os.makedirs(d, exist_ok=True)
+        async function uploadFile() {
+            const file = document.getElementById('file-input').files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            document.getElementById('upload-status').innerText = "Uploading...";
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.status === 'success') {
+                uploadedFilename = data.filename;
+                document.getElementById('upload-status').innerHTML = `Ready: <b>${data.filename}</b>`;
+            }
+        }
 
-# --- HELPER FUNCTIONS ---
+        function startProcess() {
+            const logWin = document.getElementById('log-window');
+            logWin.style.display = 'block';
+            logWin.innerHTML = '<div class="status-line">Connecting...</div>';
+            
+            const params = new URLSearchParams({
+                profile: document.getElementById('kcc-profile').value,
+                format: document.getElementById('kcc-format').value,
+                combine: document.getElementById('kcc-combine').checked,
+                mode: currentMode
+            });
 
-def safe_clean_folder(path):
-    """Try to delete a folder, but don't crash if it fails."""
-    try:
-        if os.path.exists(path):
-            shutil.rmtree(path)
-    except Exception as e:
-        print(f"WARNING: Could not clean up {path}: {e}")
+            if (currentMode === 'mangadex') {
+                if(!document.getElementById('selected-manga-id').value) { alert("Select manga first"); return; }
+                params.append('manga_id', document.getElementById('selected-manga-id').value);
+                params.append('manga_title', document.getElementById('selected-manga-title').value);
+                if(document.getElementById('vol-start').value) params.append('vol_start', document.getElementById('vol-start').value);
+                if(document.getElementById('vol-end').value) params.append('vol_end', document.getElementById('vol-end').value);
+                if(document.getElementById('chap-start').value) params.append('chap_start', document.getElementById('chap-start').value);
+                if(document.getElementById('chap-end').value) params.append('chap_end', document.getElementById('chap-end').value);
+            } else if (currentMode === 'local') {
+                if(!uploadedFilename) { alert("Upload file first"); return; }
+                params.append('filename', uploadedFilename);
+            } else {
+                const urlInput = document.getElementById(`url-${currentMode}`).value;
+                if(!urlInput) { alert("Paste a URL first"); return; }
+                params.append('chapter_url', urlInput);
+            }
 
-def run_command_with_retry(cmd, max_retries=3):
-    """Runs a shell command and yields output. Retries on failure."""
-    attempt = 0
-    while attempt < max_retries:
-        try:
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-            for line in process.stdout:
-                yield line
-            process.wait()
-            if process.returncode == 0:
-                return
-            yield f"WARNING: Process failed with code {process.returncode}. Retrying ({attempt+1}/{max_retries})..."
-        except Exception as e:
-            yield f"ERROR: System execution failed: {str(e)}"
-        attempt += 1
-        time.sleep(2)
-    yield "FAILURE: Max retries reached."
+            const evtSource = new EventSource("/stream_convert?" + params.toString());
+            evtSource.onmessage = function(e) {
+                if (e.data.startsWith("DONE:")) {
+                    const filename = e.data.replace("DONE: ", "").trim();
+                    logWin.innerHTML += `<div class="success-line">DONE!<br><a href="/download_file/${filename}">Click to Download ${filename}</a></div>`;
+                    evtSource.close();
+                    window.location.href = "/download_file/" + filename;
+                } else if (e.data.startsWith("STATUS:")) {
+                    logWin.innerHTML += `<div class="status-line">${e.data.replace("STATUS:", "")}</div>`;
+                } else if (e.data.startsWith("ERROR:")) {
+                    logWin.innerHTML += `<div style="color:red; font-weight:bold;">${e.data}</div>`;
+                    evtSource.close();
+                } else {
+                    logWin.innerHTML += `<div>${e.data.replace("LOG:", "")}</div>`;
+                }
+                logWin.scrollTop = logWin.scrollHeight;
+            };
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>KCC Web Suite v6.2 (Ram Optimized)</h1>
+        <div class="tabs">
+            <div class="tab active" id="tab-mangadex" onclick="switchTab('mangadex')">Mangadex</div>
+            <div class="tab" id="tab-mangabat" onclick="switchTab('mangabat')">Mangabat</div>
+            <div class="tab" id="tab-mangabuddy" onclick="switchTab('mangabuddy')">Mangabuddy</div>
+            <div class="tab" id="tab-mangakakalot" onclick="switchTab('mangakakalot')">Mangakakalot</div>
+            <div class="tab" id="tab-local" onclick="switchTab('local')">Local File</div>
+        </div>
 
-def is_image_dir(path):
-    if not os.path.isdir(path): return False
-    for ext in ['*.jpg', '*.jpeg', '*.png', '*.webp', '*.gif']:
-        if glob.glob(os.path.join(path, ext)):
-            return True
-    return False
+        <div id="content-mangadex" class="tab-content active">
+            <div class="input-group">
+                <input type="text" id="search-query" placeholder="Search Mangadex...">
+                <button id="btn-search" onclick="searchManga()">Search</button>
+            </div>
+            <div id="results"></div>
+            <div id="selection-area">
+                <div id="selected-label"></div>
+                <div id="manga-stats"></div>
+                <input type="hidden" id="selected-manga-id">
+                <input type="hidden" id="selected-manga-title">
+                <div style="background:#eef; padding:15px; border-radius:8px; margin-bottom:10px; display:flex; gap:10px;">
+                    <input type="number" id="vol-start" placeholder="Start Vol" value="1">
+                    <input type="number" id="vol-end" placeholder="End Vol" value="1">
+                </div>
+                <div style="background:#fee; padding:15px; border-radius:8px; display:flex; gap:10px;">
+                    <input type="number" id="chap-start" placeholder="Start Ch">
+                    <input type="number" id="chap-end" placeholder="End Ch">
+                </div>
+            </div>
+        </div>
 
-def scrape_website_images(url, save_folder):
-    domain = urlparse(url).netloc
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': f"https://{domain}/" 
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        html = response.text
-        img_urls = re.findall(r'(?:src|data-src)="([^"]+?\.(?:jpg|jpeg|png|webp))"', html)
-        img_urls = list(dict.fromkeys(img_urls))
-        
-        if not img_urls:
-            yield "LOG: No images found. Ensure this is a CHAPTER URL.\n"
-            return
+        <div id="content-mangabat" class="tab-content"><div class="input-group"><input type="text" id="url-mangabat" placeholder="Paste Mangabat Chapter URL"></div></div>
+        <div id="content-mangabuddy" class="tab-content"><div class="input-group"><input type="text" id="url-mangabuddy" placeholder="Paste Mangabuddy Chapter URL"></div></div>
+        <div id="content-mangakakalot" class="tab-content"><div class="input-group"><input type="text" id="url-mangakakalot" placeholder="Paste Mangakakalot Chapter URL"></div></div>
 
-        yield f"LOG: Found {len(img_urls)} images. Downloading...\n"
+        <div id="content-local" class="tab-content">
+            <div onclick="document.getElementById('file-input').click()" style="border:2px dashed #ccc; padding:40px; text-align:center; cursor:pointer;">
+                <h3>Upload PDF, EPUB, CBZ, ZIP</h3>
+                <input type="file" id="file-input" style="display:none" onchange="uploadFile()">
+            </div>
+            <div id="upload-status" style="margin-top:10px; text-align:center;"></div>
+        </div>
 
-        for i, img_url in enumerate(img_urls):
-            try:
-                if not img_url.startswith('http'): continue 
-                img_name = f"page_{i:04d}.jpg"
-                img_save_path = os.path.join(save_folder, img_name)
-                
-                with requests.get(img_url, headers=headers, stream=True, timeout=10) as r:
-                    r.raise_for_status()
-                    with open(img_save_path, 'wb') as f:
-                        for chunk in r.iter_content(chunk_size=1024*1024):
-                            f.write(chunk)
-                
-                if i % 5 == 0: yield f"LOG: Downloaded page {i+1}/{len(img_urls)}\n"
-            except Exception as e:
-                yield f"LOG: Failed to download image {i+1}: {e}\n"
-
-    except Exception as e:
-        yield f"ERROR: Scraping failed: {e}\n"
-
-# --- API ROUTES ---
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/api/search', methods=['POST'])
-def search_manga():
-    query = request.form.get('query')
-    if not query: return jsonify({'error': 'No query provided'}), 400
-    
-    url = "https://api.mangadex.org/manga"
-    params = {
-        'title': query, 
-        'limit': 10, 
-        'contentRating[]': ['safe', 'suggestive', 'erotica', 'pornographic'], 
-        'order[relevance]': 'desc',
-        'includes[]': ['cover_art']
-    }
-    try:
-        r = requests.get(url, params=params)
-        data = r.json()
-        results = []
-        for manga in data.get('data', []):
-            attr = manga['attributes']
-            title = attr['title'].get('en') or list(attr['title'].values())[0]
-            desc = attr['description'].get('en', 'No description available.')
-            cover_file = None
-            for rel in manga.get('relationships', []):
-                if rel['type'] == 'cover_art':
-                    cover_file = rel['attributes']['fileName']
-                    break
-            cover_url = f"https://uploads.mangadex.org/covers/{manga['id']}/{cover_file}.256.jpg" if cover_file else "
+        <div style="margin-top:30px; border-top:1px solid #eee; padding-top:20px;">
+            <div style="margin-bottom:20px;">
+                <label class="checkbox-label"><input type="checkbox" id="kcc-combine"> Combine into 1 File (Images Only)</label>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                <select id="kcc-profile"><option value="KPW">Kindle Paperwhite 1/2</option><option value="KV">Kindle PW 3+</option></select>
+                <select id="kcc-format"><option value="EPUB">EPUB</option><option value="MOBI">MOBI</option></select>
+            </div>
+            <button class="success" onclick="startProcess()">Start Conversion</button>
+        </div>
+        <div id="log-window"></div>
+    </div>
+</body>
+</html>
