@@ -34,7 +34,12 @@ def run_command_with_retry(cmd, max_retries=3):
     attempt = 0
     while attempt < max_retries:
         try:
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            # Check if cmd is a list (safe) or string (unsafe but sometimes needed)
+            if isinstance(cmd, list):
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            else:
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, shell=True)
+                
             for line in process.stdout:
                 yield line
             process.wait()
@@ -78,22 +83,27 @@ def index(): return render_template('index.html')
 
 @app.route('/api/search', methods=['POST'])
 def search_manga():
-    # (Same search logic as before)
     try:
-        r = requests.get("https://api.mangadex.org/manga", params={'title': request.form.get('query'), 'limit': 10, 'includes[]': ['cover_art']})
+        query = request.form.get('query')
+        url = "https://api.mangadex.org/manga"
+        params = {'title': query, 'limit': 10, 'contentRating[]': ['safe', 'suggestive', 'erotica', 'pornographic'], 'order[relevance]': 'desc', 'includes[]': ['cover_art']}
+        r = requests.get(url, params=params)
+        data = r.json()
         results = []
-        for m in r.json().get('data', []):
+        for m in data.get('data', []):
             title = m['attributes']['title'].get('en') or list(m['attributes']['title'].values())[0]
-            cover = next((rel['attributes']['fileName'] for rel in m.get('relationships', []) if rel['type'] == 'cover_art'), None)
-            cover_url = f"https://uploads.mangadex.org/covers/{m['id']}/{cover}.256.jpg" if cover else ""
-            results.append({'id': m['id'], 'title': title, 'desc': m['attributes']['description'].get('en', '')[:100], 'cover': cover_url})
+            desc = m['attributes']['description'].get('en', 'No Desc')[:100]
+            cover_file = next((rel['attributes']['fileName'] for rel in m.get('relationships', []) if rel['type'] == 'cover_art'), None)
+            cover_url = f"https://uploads.mangadex.org/covers/{m['id']}/{cover_file}.256.jpg" if cover_file else ""
+            results.append({'id': m['id'], 'title': title, 'desc': desc, 'cover': cover_url})
         return jsonify(results)
     except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/api/manga_details', methods=['POST'])
 def get_manga_details():
     try:
-        r = requests.get(f"https://api.mangadex.org/manga/{request.form.get('manga_id')}/aggregate", params={'translatedLanguage[]': ['en']})
+        m_id = request.form.get('manga_id')
+        r = requests.get(f"https://api.mangadex.org/manga/{m_id}/aggregate", params={'translatedLanguage[]': ['en']})
         vols = [float(k) for k in r.json().get('volumes', {}).keys() if k.lower() != 'none']
         return jsonify({'total_volumes': int(max(vols)) if vols else 0, 'latest_chapter': 0})
     except: return jsonify({'total_volumes': 0})
@@ -108,7 +118,7 @@ def upload_file():
 def stream_convert():
     def generate():
         if not job_lock.acquire(blocking=False):
-            yield "data: ERROR: Server Busy. Try again later.\n\n"; return
+            yield "data: ERROR: Server Busy. Wait for current job.\n\n"; return
         
         try:
             mode = request.args.get('mode')
@@ -116,7 +126,6 @@ def stream_convert():
             profile = request.args.get('profile', 'KPW')
             format_type = request.args.get('format', 'EPUB')
             
-            # Master Job ID (The Folder that will hold the final Zips/EPUBs)
             job_id = str(uuid.uuid4())
             final_output_dir = os.path.join(OUTPUT_FOLDER, job_id)
             os.makedirs(final_output_dir, exist_ok=True)
@@ -125,34 +134,51 @@ def stream_convert():
 
             # --- SMART BATCH LOGIC ---
             if mode == 'mangadex':
-                vol_start = int(request.args.get('vol_start', 1))
-                vol_end = int(request.args.get('vol_end', 1))
+                # Parse inputs safely
+                try:
+                    vol_start = int(request.args.get('vol_start', 1))
+                    vol_end = int(request.args.get('vol_end', 1))
+                except:
+                    vol_start = 1
+                    vol_end = 1
+                    
                 manga_title = re.sub(r'[\\/*?:"<>|]', "", request.args.get('manga_title', 'Manga')).strip()
 
-                # Loop through volumes one by one to save RAM
+                # Loop through volumes
                 for current_vol in range(vol_start, vol_end + 1):
                     yield f"data: STATUS: Processing Volume {current_vol} of {vol_end}... \n\n"
                     
-                    # Create a TEMPORARY folder just for this volume
                     vol_uuid = str(uuid.uuid4())
                     vol_dl_path = os.path.join(DOWNLOAD_FOLDER, vol_uuid)
                     os.makedirs(vol_dl_path, exist_ok=True)
 
-                    # 1. Download JUST this volume
-                    cmd_dl = ['mangadex-downloader', f"https://mangadex.org/title/{manga_id}", 
-                              '--language', 'en', '--folder', vol_dl_path, '--no-group-name',
-                              '--start-volume', str(current_vol), '--end-volume', str(current_vol)]
+                    # BUILD COMMAND SAFELY USING APPEND
+                    cmd_dl = []
+                    cmd_dl.append('mangadex-downloader')
+                    cmd_dl.append(f"https://mangadex.org/title/{manga_id}")
+                    cmd_dl.append('--language')
+                    cmd_dl.append('en')
+                    cmd_dl.append('--folder')
+                    cmd_dl.append(vol_dl_path)
+                    cmd_dl.append('--no-group-name')
+                    cmd_dl.append('--start-volume')
+                    cmd_dl.append(str(current_vol))
+                    cmd_dl.append('--end-volume')
+                    cmd_dl.append(str(current_vol))
                     
+                    dl_success = False
                     for line in run_command_with_retry(cmd_dl):
-                        if "api.mangadex.network/report" not in line: yield f"data: LOG: {line.strip()}\n\n"
+                        if "api.mangadex.network/report" not in line: 
+                            yield f"data: LOG: {line.strip()}\n\n"
+                        if "Download finished" in line or "Getting images" in line:
+                            dl_success = True
 
-                    # 2. Find images
+                    # Find images
                     inputs = []
                     for root, dirs, files in os.walk(vol_dl_path):
                         if is_image_dir(root): inputs.append(root)
 
                     if inputs:
-                        # 3. Convert JUST this volume
                         kcc_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', final_output_dir]
                         kcc_cmd.extend(inputs)
                         yield f"data: STATUS: Converting Volume {current_vol}... \n\n"
@@ -160,24 +186,29 @@ def stream_convert():
                     else:
                         yield f"data: LOG: Skipped Vol {current_vol} (No images found)\n\n"
 
-                    # 4. NUCLEAR CLEANUP of RAW IMAGES immediately to free space
-                    yield f"data: STATUS: Cleaning temp files for Vol {current_vol}... \n\n"
-                    shutil.rmtree(vol_dl_path)
+                    # CLEANUP RAW IMAGES
+                    try:
+                        shutil.rmtree(vol_dl_path)
+                    except:
+                        pass
 
-            # --- LOCAL / SCRAPER LOGIC (Simple) ---
+            # --- LOCAL / SCRAPER LOGIC ---
             else:
-                # (Existing logic for local/scraper kept simple for brevity)
                 temp_dl = os.path.join(DOWNLOAD_FOLDER, job_id)
                 inputs = []
                 if mode == 'local': 
                     inputs.append(os.path.join(UPLOAD_FOLDER, request.args.get('filename')))
                 elif mode in ['mangabat', 'mangabuddy', 'mangakakalot']:
-                    scrape_website_images(request.args.get('chapter_url'), temp_dl)
+                    yield f"data: STATUS: Scraping {mode}... \n\n"
+                    os.makedirs(temp_dl, exist_ok=True)
+                    for log in scrape_website_images(request.args.get('chapter_url'), temp_dl):
+                        yield f"data: LOG: {log}"
                     inputs.append(temp_dl)
 
-                kcc_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', final_output_dir]
-                kcc_cmd.extend(inputs)
-                for line in run_command_with_retry(kcc_cmd): yield f"data: LOG: {line.strip()}\n\n"
+                if inputs:
+                    kcc_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', final_output_dir]
+                    kcc_cmd.extend(inputs)
+                    for line in run_command_with_retry(kcc_cmd): yield f"data: LOG: {line.strip()}\n\n"
 
             # --- FINAL PACKAGING ---
             yield "data: STATUS: Packaging... \n\n"
@@ -187,18 +218,20 @@ def stream_convert():
                 yield "data: ERROR: No files generated.\n\n"; return
 
             if len(generated_files) == 1:
-                # Move single file to root output for download
                 final_name = generated_files[0]
                 shutil.move(os.path.join(final_output_dir, final_name), os.path.join(OUTPUT_FOLDER, final_name))
                 yield f"data: DONE: {final_name}\n\n"
             else:
                 # Zip multiple volumes
-                zip_name = f"{manga_title}_Batch_Vol_{vol_start}-{vol_end}.zip"
+                safe_title = re.sub(r'[\\/*?:"<>|]', "", request.args.get('manga_title', 'Batch')).strip()
+                zip_name = f"{safe_title}_Vol_{request.args.get('vol_start')}-{request.args.get('vol_end')}.zip"
                 shutil.make_archive(os.path.join(OUTPUT_FOLDER, zip_name.replace('.zip','')), 'zip', final_output_dir)
                 yield f"data: DONE: {zip_name}\n\n"
 
-            # Cleanup the job output folder (since we moved files out)
-            shutil.rmtree(final_output_dir)
+            try:
+                shutil.rmtree(final_output_dir)
+            except:
+                pass
 
         except Exception as e:
             yield f"data: ERROR: {str(e)}\n\n"
@@ -209,7 +242,16 @@ def stream_convert():
 
 @app.route('/download_file/<filename>')
 def download_file(filename):
-    return send_file(os.path.join(OUTPUT_FOLDER, filename), as_attachment=True)
+    clean_name = filename
+    # Remove UUID prefix if present (36 chars + 1 underscore)
+    if len(filename) > 37 and filename[36] == '_':
+        try:
+            # Check if first 36 chars are a UUID
+            uuid.UUID(filename[:36])
+            clean_name = filename[37:]
+        except:
+            pass
+    return send_file(os.path.join(OUTPUT_FOLDER, filename), as_attachment=True, download_name=clean_name)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
