@@ -1,21 +1,9 @@
-import os
-import subprocess
-import shutil
-import requests
-import sys
-import time
-import re
-import uuid
-import threading
-import logging
-import glob
+import os, subprocess, shutil, requests, sys, time, re, uuid, threading, logging, glob
 from urllib.parse import urlparse
 from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.utils import secure_filename
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
-logger = logging.getLogger(__name__)
-
 app = Flask(__name__)
 
 BASE_DIR = '/tmp'
@@ -51,72 +39,56 @@ def worker_process(job_id, params):
         mode = params.get('mode')
         profile = params.get('profile', 'KPW')
         format_type = params.get('format', 'EPUB')
-        combine = params.get('combine') == 'true'
         
         job_output_dir = os.path.join(OUTPUT_FOLDER, job_id)
         os.makedirs(job_output_dir, exist_ok=True)
 
-        # --- MANGADEX BATCH MODE ---
-        if mode == 'mangadex':
-            m_id = params.get('manga_id')
-            m_title = re.sub(r'[\\/*?:"<>|]', "", params.get('manga_title', 'Manga')).strip()
+        # --- UNIFIED DOWNLOADER LOGIC ---
+        if mode in ['mangadex', 'scraper']:
+            url = params.get('url') if mode == 'scraper' else f"https://mangadex.org/title/{params.get('manga_id')}"
             v_start = int(params.get('vol_start', 1))
             v_end = int(params.get('vol_end', 1))
 
             for v in range(v_start, v_end + 1):
-                log_to_job(job_id, f"--- Volume {v} ---")
+                log_to_job(job_id, f"--- Processing Volume {v} ---")
                 v_path = os.path.join(DOWNLOAD_FOLDER, str(uuid.uuid4()))
                 os.makedirs(v_path, exist_ok=True)
                 
-                dl_cmd = ['mangadex-downloader', f"https://mangadex.org/title/{m_id}", '--language', 'en', '--folder', v_path, '--no-group-name', '--start-volume', str(v), '--end-volume', str(v)]
+                dl_cmd = ['mangadex-downloader', url, '--language', 'en', '--folder', v_path, '--no-group-name', '--start-volume', str(v), '--end-volume', str(v)]
                 if params.get('chap_start'): dl_cmd.extend(['--start-chapter', params.get('chap_start')])
                 if params.get('chap_end'): dl_cmd.extend(['--end-chapter', params.get('chap_end')])
                 
                 run_command(dl_cmd, job_id)
                 
+                # Find image folders and convert
                 inputs = [root for root, d, f in os.walk(v_path) if is_image_dir(root)]
                 if inputs:
+                    log_to_job(job_id, f"Converting Volume {v} to {format_type}...")
                     k_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', job_output_dir]
                     k_cmd.extend(inputs)
                     run_command(k_cmd, job_id)
                 shutil.rmtree(v_path)
 
-        # --- LOCAL FILE MODE ---
         elif mode == 'local':
-            filename = params.get('filename')
-            file_path = os.path.join(UPLOAD_FOLDER, filename)
-            log_to_job(job_id, f"Converting local file: {filename}")
-            k_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', job_output_dir, file_path]
-            run_command(k_cmd, job_id)
+            file_path = os.path.join(UPLOAD_FOLDER, params.get('filename'))
+            run_command(['kcc-c2e', '-p', profile, '-f', format_type, '--output', job_output_dir, file_path], job_id)
 
-        # --- SCRAPER MODES ---
-        elif mode in ['mangabat', 'mangabuddy', 'mangakakalot']:
-            url = params.get('chapter_url')
-            log_to_job(job_id, f"Scraping {url}...")
-            # Using mangadex-downloader's generic scraper if available, or direct kcc on URL
-            k_cmd = ['kcc-c2e', '-p', profile, '-f', format_type, '--output', job_output_dir, url]
-            run_command(k_cmd, job_id)
-
-        # --- FINALIZING ---
+        # --- FINAL PACKAGING ---
         files = os.listdir(job_output_dir)
         if not files:
-            log_to_job(job_id, "FAILED: No files created."); JOBS[job_id]['status'] = 'failed'; return
+            log_to_job(job_id, "FAILED: No output generated."); JOBS[job_id]['status'] = 'failed'; return
 
-        # If only 1 file exists, or user didn't request a batch zip, just move the file
         if len(files) == 1:
             fname = files[0]
             shutil.move(os.path.join(job_output_dir, fname), os.path.join(OUTPUT_FOLDER, fname))
             JOBS[job_id]['result'] = fname
         else:
-            # Multiple files -> ZIP
-            zip_name = f"Batch_{job_id[:5]}.zip"
+            zip_name = f"Batch_{params.get('manga_title', 'Manga')}_{job_id[:4]}.zip"
             shutil.make_archive(os.path.join(OUTPUT_FOLDER, zip_name.replace('.zip','')), 'zip', job_output_dir)
             JOBS[job_id]['result'] = zip_name
 
         shutil.rmtree(job_output_dir)
         JOBS[job_id]['status'] = 'finished'
-        log_to_job(job_id, "JOB COMPLETE")
-
     except Exception as e:
         log_to_job(job_id, f"ERROR: {str(e)}"); JOBS[job_id]['status'] = 'failed'
 
@@ -132,6 +104,15 @@ def search_manga():
         cv = next((rel['attributes']['fileName'] for rel in m.get('relationships', []) if rel['type'] == 'cover_art'), None)
         results.append({'id': m['id'], 'title': t, 'cover': f"https://uploads.mangadex.org/covers/{m['id']}/{cv}.256.jpg" if cv else ""})
     return jsonify(results)
+
+@app.route('/api/manga_details', methods=['POST'])
+def get_manga_details():
+    mid = request.form.get('manga_id')
+    r = requests.get(f"https://api.mangadex.org/manga/{mid}/aggregate", params={'translatedLanguage[]': ['en']})
+    data = r.json()
+    vols = [float(k) for k in data.get('volumes', {}).keys() if k.lower() != 'none']
+    total_ch = sum(len(v.get('chapters', {})) for v in data.get('volumes', {}).values())
+    return jsonify({'total_volumes': int(max(vols)) if vols else 0, 'total_chapters': total_ch})
 
 @app.route('/api/upload', methods=['POST'])
 def upload():
